@@ -1,26 +1,64 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from .schemas import SummaryRequest, SummaryResponse
-from .categoriser import count_labels
+from datetime import date
+from decimal import Decimal
+from typing import List
 
-app = FastAPI(title="FYP Finance API")
+from fastapi import Depends, FastAPI
+from sqlalchemy.orm import Session
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+from .db import SessionLocal
+from . import models, schemas
+
+
+app = FastAPI(
+    title="FYP Finance API",
+    version="0.2.0",
 )
 
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 @app.get("/health")
-def health():
+def health_check():
     return {"status": "ok"}
 
-@app.post("/summary", response_model=SummaryResponse)
-def summary(payload: SummaryRequest):
-    amounts = [t.amount for t in payload.transactions]
-    income = sum(a for a in amounts if a > 0)
-    expenses = -sum(a for a in amounts if a < 0)
+
+@app.post("/summary", response_model=schemas.SummaryResponse)
+def calculate_summary(payload: schemas.SummaryRequest):
+    income = Decimal("0")
+    expenses = Decimal("0")
+
+    for txn in payload.transactions:
+        if txn.amount >= 0:
+            income += Decimal(str(txn.amount))
+        else:
+            expenses += Decimal(str(abs(txn.amount)))
+
     net = income - expenses
-    labels = count_labels([t.description for t in payload.transactions])
-    return SummaryResponse(income=income, expenses=expenses, net=net)
+    return schemas.SummaryResponse(
+        income=float(income),
+        expenses=float(expenses),
+        net=float(net),
+    )
+
+
+@app.get("/transactions", response_model=List[schemas.Transaction])
+def list_transactions(db: Session = Depends(get_db)):
+    rows = db.query(models.Transaction).order_by(models.Transaction.date).all()
+
+    result: List[schemas.Transaction] = []
+    for row in rows:
+        result.append(
+            schemas.Transaction(
+                date=row.date.isoformat() if isinstance(row.date, date) else str(row.date),
+                description=row.description,
+                amount=float(row.amount),
+            )
+        )
+    return result
+
