@@ -1,8 +1,11 @@
+import os
+from dotenv import load_dotenv, find_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-import os
 
-# Load from environment variables
+# Load .env so os.getenv can see the values
+load_dotenv(find_dotenv())
+
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "fyp_finance")
