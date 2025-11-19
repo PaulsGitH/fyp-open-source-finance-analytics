@@ -2,11 +2,11 @@ from datetime import date
 from decimal import Decimal
 from typing import List
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from . import models, schemas
+from . import models, schemas, auth
 
 
 app = FastAPI(
@@ -62,3 +62,15 @@ def list_transactions(db: Session = Depends(get_db)):
         )
     return result
 
+
+@app.post("/login", response_model=schemas.LoginResponse)
+def login(credentials: schemas.LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == credentials.email).first()
+
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not auth.verify_password(credentials.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    return schemas.LoginResponse(success=True, message="Login successful")
