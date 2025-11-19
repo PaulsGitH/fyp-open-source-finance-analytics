@@ -20,17 +20,26 @@ def load_sample() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "date": ["2025-10-01", "2025-10-02", "2025-10-03"],
-            "description": ["Salary ACME", "Coffee Shop", "Rent"],
+            "description": ["Job ACME", "Coffee Shop", "Rent"],
             "amount": [2500.00, -3.50, -1200.00],
         }
     )
 
 
+def load_transactions_from_db() -> pd.DataFrame:
+    try:
+        r = requests.get(f"{API_BASE}/transactions", timeout=3)
+        if not r.ok:
+            return None
+        rows = r.json()
+        return pd.DataFrame(rows)
+    except Exception:
+        return None
+
+
 def show_dashboard() -> None:
     st.title("Open Source Finance Analytics")
-    st.caption(
-        "Semester 1 hello world. Upload a CSV or use the sample to preview metrics."
-    )
+    st.caption("Semester 1 hello world. Upload a CSV or use the sample to preview metrics.")
 
     left, right = st.columns([3, 2])
     with left:
@@ -38,6 +47,7 @@ def show_dashboard() -> None:
         uploaded = st.file_uploader("Upload CSV", type=["csv"])
 
     df = None
+
     if use_sample and uploaded is None:
         df = load_sample()
     elif uploaded is not None:
@@ -45,6 +55,10 @@ def show_dashboard() -> None:
             df = pd.read_csv(uploaded)
         except Exception as e:
             st.error(f"Could not read CSV. Details: {e}")
+    else:
+        db_df = load_transactions_from_db()
+        if db_df is not None and not db_df.empty:
+            df = db_df
 
     if df is not None:
         st.subheader("Transactions")
@@ -123,9 +137,11 @@ def show_login() -> None:
 
         body = r.json()
         if body.get("success"):
+            import time
+            st.success("Login successful.")
+            time.sleep(2.5)
             st.session_state.authenticated = True
             st.session_state.user_email = email
-            st.success(body.get("message") or "Login successful.")
             st.rerun()
         else:
             st.error(body.get("message") or "Invalid credentials.")
