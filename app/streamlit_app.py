@@ -5,6 +5,9 @@ from pathlib import Path
 import pandas as pd
 import requests
 import streamlit as st
+from dotenv import load_dotenv, find_dotenv
+
+load_dotenv(find_dotenv())
 
 st.set_page_config(page_title="FYP Finance", layout="wide")
 
@@ -20,7 +23,7 @@ def load_sample() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "date": ["2025-10-01", "2025-10-02", "2025-10-03"],
-            "description": ["Job ACME", "Coffee Shop", "Rent"],
+            "description": ["salary Job", "Coffee Shop", "Rent"],
             "amount": [2500.00, -3.50, -1200.00],
         }
     )
@@ -28,7 +31,7 @@ def load_sample() -> pd.DataFrame:
 
 def load_transactions_from_db() -> pd.DataFrame:
     try:
-        r = requests.get(f"{API_BASE}/transactions", timeout=3)
+        r = requests.get(f"{API_BASE}/transactions", timeout=5)
         if not r.ok:
             return None
         rows = r.json()
@@ -37,24 +40,59 @@ def load_transactions_from_db() -> pd.DataFrame:
         return None
 
 
+def upload_csv_to_backend(uploaded_file) -> tuple[bool, str]:
+    try:
+        health = requests.get(f"{API_BASE}/health", timeout=3)
+        if not health.ok:
+            return False, f"Backend not ready. {health.status_code} {health.text}"
+
+        file_bytes = uploaded_file.getvalue()
+
+        files = {
+            "file": (uploaded_file.name, file_bytes, "text/csv"),
+        }
+
+        st.write("API_BASE:", API_BASE)
+        st.write("Uploading endpoint:", f"{API_BASE}/transactions/upload")
+
+        r = requests.post(
+            f"{API_BASE}/transactions/upload",
+            files=files,
+            timeout=20,
+        )
+
+        if r.ok:
+            return True, "CSV uploaded successfully."
+        return False, f"Upload failed. {r.status_code} {r.text}"
+    except Exception as e:
+        return False, f"Upload failed. Details: {e}"
+
+
 def show_dashboard() -> None:
     st.title("Open Source Finance Analytics")
-    st.caption("Semester 1 hello world. Upload a CSV or use the sample to preview metrics.")
+    st.caption("Upload a CSV or use the sample to preview metrics.")
 
     left, right = st.columns([3, 2])
     with left:
-        use_sample = st.checkbox("Use sample data", value=True)
+        use_sample = st.checkbox("Use sample data", value=False)
         uploaded = st.file_uploader("Upload CSV", type=["csv"])
+
+        st.write("API_BASE:", API_BASE)
+        st.write("Uploading endpoint:", f"{API_BASE}/transactions/upload")
 
     df = None
 
-    if use_sample and uploaded is None:
+    if uploaded is not None:
+        ok, msg = upload_csv_to_backend(uploaded)
+        if ok:
+            st.success(msg)
+            st.rerun()
+        else:
+            st.error(msg)
+            return
+
+    if use_sample:
         df = load_sample()
-    elif uploaded is not None:
-        try:
-            df = pd.read_csv(uploaded)
-        except Exception as e:
-            st.error(f"Could not read CSV. Details: {e}")
     else:
         db_df = load_transactions_from_db()
         if db_df is not None and not db_df.empty:
@@ -62,11 +100,34 @@ def show_dashboard() -> None:
 
     if df is not None:
         st.subheader("Transactions")
-        st.dataframe(df, use_container_width=True, hide_index=True)
 
-        income_local = df.loc[df["amount"] > 0, "amount"].sum()
-        expense_local = -df.loc[df["amount"] < 0, "amount"].sum()
-        net_local = income_local - expense_local
+        display_cols = [
+            c
+            for c in [
+                "date",
+                "description",
+                "merchant",
+                "category",
+                "amount",
+                "balance",
+                "currency",
+            ]
+            if c in df.columns
+        ]
+
+        if display_cols:
+            st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
+        else:
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+        if "amount" in df.columns:
+            income_local = df.loc[df["amount"] > 0, "amount"].sum()
+            expense_local = -df.loc[df["amount"] < 0, "amount"].sum()
+            net_local = income_local - expense_local
+        else:
+            income_local = 0.0
+            expense_local = 0.0
+            net_local = 0.0
 
         summary = {
             "income": float(income_local),
@@ -75,24 +136,25 @@ def show_dashboard() -> None:
         }
 
         try:
-            payload = {
-                "transactions": [
-                    {
-                        "date": str(r["date"]),
-                        "description": str(r["description"]),
-                        "amount": float(r["amount"]),
-                    }
-                    for _, r in df.iterrows()
-                ]
-            }
-            r = requests.post(
-                f"{API_BASE}/summary",
-                data=json.dumps(payload),
-                headers={"Content-Type": "application/json"},
-                timeout=3,
-            )
-            if r.ok:
-                summary = r.json()
+            if all(c in df.columns for c in ["date", "description", "amount"]):
+                payload = {
+                    "transactions": [
+                        {
+                            "date": str(r["date"]),
+                            "description": str(r["description"]),
+                            "amount": float(r["amount"]),
+                        }
+                        for _, r in df.iterrows()
+                    ]
+                }
+                r = requests.post(
+                    f"{API_BASE}/summary",
+                    data=json.dumps(payload),
+                    headers={"Content-Type": "application/json"},
+                    timeout=5,
+                )
+                if r.ok:
+                    summary = r.json()
         except Exception:
             pass
 
@@ -102,7 +164,9 @@ def show_dashboard() -> None:
         b.metric("Total expenses", f"€{summary['expenses']:,.2f}")
         c.metric("Net", f"€{summary['net']:,.2f}")
     else:
-        st.info("Select Use sample data or upload a CSV to continue.")
+        st.info(
+            "Upload a CSV to ingest into PostgreSQL, or enable sample data to preview metrics."
+        )
 
 
 def show_login() -> None:
@@ -125,7 +189,7 @@ def show_login() -> None:
                 f"{API_BASE}/login",
                 data=json.dumps(payload),
                 headers={"Content-Type": "application/json"},
-                timeout=3,
+                timeout=5,
             )
         except Exception as e:
             st.error(f"Could not contact backend. Details: {e}")
@@ -138,6 +202,7 @@ def show_login() -> None:
         body = r.json()
         if body.get("success"):
             import time
+
             st.success("Login successful.")
             time.sleep(2.5)
             st.session_state.authenticated = True

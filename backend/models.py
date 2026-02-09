@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Date, Numeric, String, DateTime
+from sqlalchemy import Column, Integer, Date, Numeric, String, DateTime, ForeignKey
 from sqlalchemy.sql import func
 
 from .db import Base
@@ -8,9 +8,19 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id = Column(Integer, primary_key=True, index=True)
-    date = Column(Date, nullable=False)
-    description = Column(String, nullable=False)
-    amount = Column(Numeric(12, 2), nullable=False)
+
+    transaction_id = Column(String, nullable=True)
+    date = Column(Date, nullable=True)
+    description = Column(String, nullable=True)
+    merchant = Column(String, nullable=True)
+    category = Column(String, nullable=True)
+
+    amount = Column(Numeric(12, 2), nullable=True)
+    balance = Column(Numeric(12, 2), nullable=True)
+
+    currency = Column(String, nullable=True)
+
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
 
 class User(Base):

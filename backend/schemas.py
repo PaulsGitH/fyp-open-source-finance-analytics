@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -50,3 +50,16 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     success: bool
     message: str
+
+class TransactionOut(BaseModel):
+    transaction_id: str | None = None
+    date: str
+    description: str
+    merchant: str | None = None
+    category: str | None = None
+    amount: float
+    balance: float | None = None
+    currency: str | None = None
+    user_id: int | None = None
+
+    model_config = ConfigDict(from_attributes=True)
