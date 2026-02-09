@@ -1,15 +1,14 @@
 from datetime import date
 from decimal import Decimal
 from typing import List
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
-from .db import SessionLocal
-from . import models, schemas, auth
 import io
 import pandas as pd
-from fastapi import UploadFile, File
 
-print("LOADING BACKEND FROM", __file__)
+from .db import SessionLocal
+from . import models, schemas, auth
+
 
 app = FastAPI(
     title="FYP Finance API",
@@ -23,16 +22,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
-
-@app.on_event("startup")
-def _print_routes() -> None:
-    print("ROUTES LOADED:")
-    for r in app.routes:
-        path = getattr(r, "path", None)
-        methods = getattr(r, "methods", None)
-        if path:
-            print(f"  {path}  {sorted(list(methods)) if methods else ''}")
 
 
 @app.get("/health")
@@ -91,8 +80,6 @@ def upload_transactions_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
-    print("HIT /transactions/upload", file.filename)
-
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files supported")
 
@@ -111,39 +98,92 @@ def upload_transactions_csv(
             detail=f"Missing required columns: {sorted(list(missing))}",
         )
 
+    user_id = 1
+
+    df["date_parsed"] = pd.to_datetime(df["date"], errors="coerce").dt.date
+
+    txn_ids = set(
+        str(x).strip()
+        for x in df.get("transaction_id", pd.Series([])).dropna().tolist()
+        if str(x).strip()
+    )
+
+    existing_ids = set()
+    if txn_ids:
+        rows = (
+            db.query(models.Transaction.transaction_id)
+            .filter(
+                models.Transaction.user_id == user_id,
+                models.Transaction.transaction_id.in_(list(txn_ids)),
+            )
+            .all()
+        )
+        existing_ids = {r[0] for r in rows if r[0]}
+
     inserted = 0
+    skipped = 0
     errors = []
 
     for i, row in df.iterrows():
         try:
-            parsed_date = pd.to_datetime(row.get("date"), errors="coerce")
-            if pd.isna(parsed_date):
+            parsed_date = row.get("date_parsed")
+            if parsed_date is None or pd.isna(parsed_date):
                 raise ValueError("Invalid date")
 
             amount = row.get("amount")
             if amount is None or (isinstance(amount, float) and pd.isna(amount)):
                 raise ValueError("Invalid amount")
 
+            txn_id = row.get("transaction_id")
+            txn_id = (
+                str(txn_id).strip()
+                if txn_id is not None and str(txn_id).strip()
+                else None
+            )
+
+            if txn_id and txn_id in existing_ids:
+                skipped += 1
+                continue
+
+            if not txn_id:
+                exists = (
+                    db.query(models.Transaction.id)
+                    .filter(
+                        models.Transaction.user_id == user_id,
+                        models.Transaction.date == parsed_date,
+                        models.Transaction.description == row.get("description"),
+                        models.Transaction.amount == amount,
+                        models.Transaction.balance == row.get("balance"),
+                    )
+                    .first()
+                )
+                if exists:
+                    skipped += 1
+                    continue
+
             txn = models.Transaction(
-                transaction_id=row.get("transaction_id"),
-                date=parsed_date.date(),
+                transaction_id=txn_id,
+                date=parsed_date,
                 description=row.get("description"),
                 merchant=row.get("merchant"),
                 category=row.get("category"),
                 amount=amount,
                 balance=row.get("balance"),
                 currency=row.get("currency"),
-                user_id=1,
+                user_id=user_id,
             )
 
             db.add(txn)
             inserted += 1
 
+            if txn_id:
+                existing_ids.add(txn_id)
+
         except Exception as e:
             errors.append({"row": int(i), "error": str(e)})
 
     db.commit()
-    return {"inserted": inserted, "errors": errors}
+    return {"inserted": inserted, "skipped": skipped, "errors": errors}
 
 
 @app.post("/login", response_model=schemas.LoginResponse)

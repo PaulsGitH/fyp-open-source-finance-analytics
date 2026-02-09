@@ -1,6 +1,7 @@
 import os
 import json
 from pathlib import Path
+import hashlib
 
 import pandas as pd
 import requests
@@ -40,6 +41,12 @@ def load_transactions_from_db() -> pd.DataFrame:
         return None
 
 
+def _file_sig(uploaded_file) -> str:
+    b = uploaded_file.getvalue()
+    h = hashlib.sha256(b).hexdigest()[:16]
+    return f"{uploaded_file.name}|{len(b)}|{h}"
+
+
 def upload_csv_to_backend(uploaded_file) -> tuple[bool, str]:
     try:
         health = requests.get(f"{API_BASE}/health", timeout=3)
@@ -52,9 +59,6 @@ def upload_csv_to_backend(uploaded_file) -> tuple[bool, str]:
             "file": (uploaded_file.name, file_bytes, "text/csv"),
         }
 
-        st.write("API_BASE:", API_BASE)
-        st.write("Uploading endpoint:", f"{API_BASE}/transactions/upload")
-
         r = requests.post(
             f"{API_BASE}/transactions/upload",
             files=files,
@@ -62,7 +66,13 @@ def upload_csv_to_backend(uploaded_file) -> tuple[bool, str]:
         )
 
         if r.ok:
-            return True, "CSV uploaded successfully."
+            body = r.json()
+            inserted = body.get("inserted", 0)
+            skipped = body.get("skipped", 0)
+            return (
+                True,
+                f"CSV uploaded successfully. Inserted {inserted}. Skipped {skipped}.",
+            )
         return False, f"Upload failed. {r.status_code} {r.text}"
     except Exception as e:
         return False, f"Upload failed. Details: {e}"
@@ -72,24 +82,27 @@ def show_dashboard() -> None:
     st.title("Open Source Finance Analytics")
     st.caption("Upload a CSV or use the sample to preview metrics.")
 
+    if "last_upload_sig" not in st.session_state:
+        st.session_state.last_upload_sig = None
+
     left, right = st.columns([3, 2])
     with left:
         use_sample = st.checkbox("Use sample data", value=False)
-        uploaded = st.file_uploader("Upload CSV", type=["csv"])
-
-        st.write("API_BASE:", API_BASE)
-        st.write("Uploading endpoint:", f"{API_BASE}/transactions/upload")
+        uploaded = st.file_uploader("Upload CSV", type=["csv"], key="uploader")
 
     df = None
 
     if uploaded is not None:
-        ok, msg = upload_csv_to_backend(uploaded)
-        if ok:
-            st.success(msg)
-            st.rerun()
-        else:
-            st.error(msg)
-            return
+        sig = _file_sig(uploaded)
+        if st.session_state.last_upload_sig != sig:
+            ok, msg = upload_csv_to_backend(uploaded)
+            if ok:
+                st.session_state.last_upload_sig = sig
+                st.success(msg)
+                st.rerun()
+            else:
+                st.error(msg)
+                return
 
     if use_sample:
         df = load_sample()
