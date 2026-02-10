@@ -161,41 +161,16 @@ def show_dashboard() -> None:
         else:
             st.dataframe(df, use_container_width=True, hide_index=True)
 
-        if "amount" in df.columns:
-            income_local = df.loc[df["amount"] > 0, "amount"].sum()
-            expense_local = -df.loc[df["amount"] < 0, "amount"].sum()
-            net_local = income_local - expense_local
-        else:
-            income_local = 0.0
-            expense_local = 0.0
-            net_local = 0.0
-
-        summary = {
-            "income": float(income_local),
-            "expenses": float(expense_local),
-            "net": float(net_local),
-        }
+        summary = {"income": 0.0, "expenses": 0.0, "net": 0.0}
 
         try:
-            if all(c in df.columns for c in ["date", "description", "amount"]):
-                payload = {
-                    "transactions": [
-                        {
-                            "date": str(r["date"]),
-                            "description": str(r["description"]),
-                            "amount": float(r["amount"]),
-                        }
-                        for _, r in df.iterrows()
-                    ]
-                }
-                r = requests.post(
-                    f"{API_BASE}/summary",
-                    data=json.dumps(payload),
-                    headers={"Content-Type": "application/json"},
-                    timeout=5,
-                )
-                if r.ok:
-                    summary = r.json()
+            r = requests.get(
+                f"{API_BASE}/transactions/summary",
+                headers=_auth_headers(),
+                timeout=5,
+            )
+            if r.ok:
+                summary = r.json()
         except Exception:
             pass
 
