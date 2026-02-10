@@ -3,6 +3,8 @@ from decimal import Decimal
 from typing import List, Optional
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func, case
+
 import io
 import pandas as pd
 
@@ -93,6 +95,63 @@ def list_transactions(
         )
 
     return result
+
+
+@app.get("/transactions/summary", response_model=schemas.SummaryResponse)
+def transactions_summary(
+    db: Session = Depends(get_db),
+    start_date: Optional[date] = Query(default=None),
+    end_date: Optional[date] = Query(default=None),
+    kind: str = Query(default="all", pattern="^(all|income|expense)$"),
+):
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be <= end_date")
+
+    user_id = 1
+
+    q = db.query(models.Transaction).filter(models.Transaction.user_id == user_id)
+
+    if start_date is not None:
+        q = q.filter(models.Transaction.date >= start_date)
+    if end_date is not None:
+        q = q.filter(models.Transaction.date <= end_date)
+
+    if kind == "income":
+        q = q.filter(models.Transaction.amount > 0)
+    elif kind == "expense":
+        q = q.filter(models.Transaction.amount < 0)
+
+    income_expr = func.coalesce(
+        func.sum(
+            case(
+                (models.Transaction.amount > 0, models.Transaction.amount),
+                else_=0,
+            )
+        ),
+        0,
+    )
+
+    expenses_expr = func.coalesce(
+        func.sum(
+            case(
+                (models.Transaction.amount < 0, -models.Transaction.amount),
+                else_=0,
+            )
+        ),
+        0,
+    )
+
+    income_val, expenses_val = q.with_entities(income_expr, expenses_expr).one()
+
+    income = Decimal(str(income_val))
+    expenses = Decimal(str(expenses_val))
+    net = income - expenses
+
+    return schemas.SummaryResponse(
+        income=float(income),
+        expenses=float(expenses),
+        net=float(net),
+    )
 
 
 @app.post("/transactions/upload")

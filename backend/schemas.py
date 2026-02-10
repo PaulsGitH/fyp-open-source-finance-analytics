@@ -8,6 +8,7 @@ from pydantic import ConfigDict
 
 # Existing summary models for the hello world prototype
 
+
 class Transaction(BaseModel):
     date: str
     description: str
@@ -26,6 +27,7 @@ class SummaryResponse(BaseModel):
 
 # New models for the PostgreSQL backed transactions API
 
+
 class TransactionBase(BaseModel):
     txn_date: date
     description: str
@@ -39,6 +41,7 @@ class TransactionDB(TransactionBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 from pydantic import BaseModel, EmailStr
 
 
@@ -51,9 +54,10 @@ class LoginResponse(BaseModel):
     success: bool
     message: str
 
+
 class TransactionOut(BaseModel):
     transaction_id: str | None = None
-    date: str
+    date: Optional[str] = None
     description: str
     merchant: str | None = None
     category: str | None = None
