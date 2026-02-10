@@ -17,6 +17,13 @@ API_PORT = int(os.getenv("API_PORT", "8000"))
 API_BASE = f"http://{API_HOST}:{API_PORT}"
 
 
+def _auth_headers() -> dict:
+    email = st.session_state.get("user_email")
+    if not email:
+        return {}
+    return {"X-User-Email": email}
+
+
 def load_sample() -> pd.DataFrame:
     sample_path = Path(__file__).resolve().parents[1] / "data" / "samples.csv"
     if sample_path.exists():
@@ -32,7 +39,11 @@ def load_sample() -> pd.DataFrame:
 
 def load_transactions_from_db() -> pd.DataFrame:
     try:
-        r = requests.get(f"{API_BASE}/transactions", timeout=5)
+        r = requests.get(
+            f"{API_BASE}/transactions",
+            headers=_auth_headers(),
+            timeout=5,
+        )
         if not r.ok:
             return None
         rows = r.json()
@@ -62,6 +73,7 @@ def upload_csv_to_backend(uploaded_file) -> tuple[bool, str]:
         r = requests.post(
             f"{API_BASE}/transactions/upload",
             files=files,
+            headers=_auth_headers(),
             timeout=20,
         )
 
@@ -92,17 +104,33 @@ def show_dashboard() -> None:
 
     df = None
 
+    if "flash_msg" not in st.session_state:
+        st.session_state.flash_msg = None
+    if "flash_kind" not in st.session_state:
+        st.session_state.flash_kind = None
+    if "rerun_after_upload" not in st.session_state:
+        st.session_state.rerun_after_upload = False
+
+    if st.session_state.flash_msg:
+        if st.session_state.flash_kind == "success":
+            st.success(st.session_state.flash_msg)
+        else:
+            st.error(st.session_state.flash_msg)
+        st.session_state.flash_msg = None
+        st.session_state.flash_kind = None
+
     if uploaded is not None:
         sig = _file_sig(uploaded)
         if st.session_state.last_upload_sig != sig:
             ok, msg = upload_csv_to_backend(uploaded)
-            if ok:
-                st.session_state.last_upload_sig = sig
-                st.success(msg)
-                st.rerun()
-            else:
-                st.error(msg)
-                return
+            st.session_state.last_upload_sig = sig
+            st.session_state.flash_msg = msg
+            st.session_state.flash_kind = "success" if ok else "error"
+            st.session_state.rerun_after_upload = True
+
+    if st.session_state.rerun_after_upload:
+        st.session_state.rerun_after_upload = False
+        st.rerun()
 
     if use_sample:
         df = load_sample()

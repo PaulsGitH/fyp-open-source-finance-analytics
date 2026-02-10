@@ -1,12 +1,12 @@
 from datetime import date
 from decimal import Decimal
 from typing import List, Optional
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func, case
 
 import io
 import pandas as pd
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Query, Header
+from sqlalchemy.orm import Session
+from sqlalchemy import func, case
 
 from .db import SessionLocal
 from . import models, schemas, auth
@@ -24,6 +24,20 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def get_current_user(
+    db: Session = Depends(get_db),
+    x_user_email: Optional[str] = Header(default=None),
+) -> models.User:
+    if not x_user_email:
+        raise HTTPException(status_code=401, detail="Missing X-User-Email")
+
+    user = db.query(models.User).filter(models.User.email == x_user_email).first()
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    return user
 
 
 @app.get("/health")
@@ -53,6 +67,7 @@ def calculate_summary(payload: schemas.SummaryRequest):
 @app.get("/transactions", response_model=List[schemas.TransactionOut])
 def list_transactions(
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
     start_date: Optional[date] = Query(default=None),
     end_date: Optional[date] = Query(default=None),
     kind: str = Query(default="all", pattern="^(all|income|expense)$"),
@@ -60,7 +75,9 @@ def list_transactions(
     if start_date and end_date and start_date > end_date:
         raise HTTPException(status_code=400, detail="start_date must be <= end_date")
 
-    q = db.query(models.Transaction)
+    q = db.query(models.Transaction).filter(
+        models.Transaction.user_id == current_user.id
+    )
 
     if start_date is not None:
         q = q.filter(models.Transaction.date >= start_date)
@@ -84,11 +101,7 @@ def list_transactions(
                 merchant=getattr(row, "merchant", None),
                 category=getattr(row, "category", None),
                 amount=float(row.amount) if row.amount is not None else 0.0,
-                balance=(
-                    float(row.balance)
-                    if getattr(row, "balance", None) is not None
-                    else None
-                ),
+                balance=float(row.balance) if row.balance is not None else None,
                 currency=getattr(row, "currency", None),
                 user_id=getattr(row, "user_id", None),
             )
@@ -100,6 +113,7 @@ def list_transactions(
 @app.get("/transactions/summary", response_model=schemas.SummaryResponse)
 def transactions_summary(
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
     start_date: Optional[date] = Query(default=None),
     end_date: Optional[date] = Query(default=None),
     kind: str = Query(default="all", pattern="^(all|income|expense)$"),
@@ -107,9 +121,9 @@ def transactions_summary(
     if start_date and end_date and start_date > end_date:
         raise HTTPException(status_code=400, detail="start_date must be <= end_date")
 
-    user_id = 1
-
-    q = db.query(models.Transaction).filter(models.Transaction.user_id == user_id)
+    q = db.query(models.Transaction).filter(
+        models.Transaction.user_id == current_user.id
+    )
 
     if start_date is not None:
         q = q.filter(models.Transaction.date >= start_date)
@@ -158,6 +172,7 @@ def transactions_summary(
 def upload_transactions_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files supported")
@@ -177,7 +192,7 @@ def upload_transactions_csv(
             detail=f"Missing required columns: {sorted(list(missing))}",
         )
 
-    user_id = 1
+    user_id = current_user.id
 
     df["date_parsed"] = pd.to_datetime(df["date"], errors="coerce").dt.date
 
