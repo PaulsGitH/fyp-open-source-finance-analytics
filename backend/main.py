@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
-from typing import List
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, File
+from typing import List, Optional
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
 import io
 import pandas as pd
@@ -49,19 +49,39 @@ def calculate_summary(payload: schemas.SummaryRequest):
 
 
 @app.get("/transactions", response_model=List[schemas.TransactionOut])
-def list_transactions(db: Session = Depends(get_db)):
-    rows = db.query(models.Transaction).order_by(models.Transaction.date).all()
+def list_transactions(
+    db: Session = Depends(get_db),
+    start_date: Optional[date] = Query(default=None),
+    end_date: Optional[date] = Query(default=None),
+    kind: str = Query(default="all", pattern="^(all|income|expense)$"),
+):
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be <= end_date")
+
+    q = db.query(models.Transaction)
+
+    if start_date is not None:
+        q = q.filter(models.Transaction.date >= start_date)
+    if end_date is not None:
+        q = q.filter(models.Transaction.date <= end_date)
+
+    if kind == "income":
+        q = q.filter(models.Transaction.amount > 0)
+    elif kind == "expense":
+        q = q.filter(models.Transaction.amount < 0)
+
+    rows = q.order_by(models.Transaction.date).all()
 
     result = []
     for row in rows:
         result.append(
             schemas.TransactionOut(
                 transaction_id=getattr(row, "transaction_id", None),
-                date=row.date.isoformat(),
+                date=row.date.isoformat() if row.date is not None else None,
                 description=row.description,
                 merchant=getattr(row, "merchant", None),
                 category=getattr(row, "category", None),
-                amount=float(row.amount),
+                amount=float(row.amount) if row.amount is not None else 0.0,
                 balance=(
                     float(row.balance)
                     if getattr(row, "balance", None) is not None
