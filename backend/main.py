@@ -97,7 +97,7 @@ def list_transactions(
             schemas.TransactionOut(
                 transaction_id=getattr(row, "transaction_id", None),
                 date=row.date.isoformat() if row.date is not None else None,
-                description=row.description,
+                description=row.description or "",
                 merchant=getattr(row, "merchant", None),
                 category=getattr(row, "category", None),
                 amount=float(row.amount) if row.amount is not None else 0.0,

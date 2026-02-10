@@ -60,7 +60,7 @@ def _file_sig(uploaded_file) -> str:
 
 def upload_csv_to_backend(uploaded_file) -> tuple[bool, str]:
     try:
-        health = requests.get(f"{API_BASE}/health", timeout=3)
+        health = requests.get(f"{API_BASE}/health", headers=_auth_headers(), timeout=3)
         if not health.ok:
             return False, f"Backend not ready. {health.status_code} {health.text}"
 
@@ -126,7 +126,7 @@ def show_dashboard() -> None:
             st.session_state.last_upload_sig = sig
             st.session_state.flash_msg = msg
             st.session_state.flash_kind = "success" if ok else "error"
-            st.session_state.rerun_after_upload = True
+            st.session_state.rerun_after_upload = ok
 
     if st.session_state.rerun_after_upload:
         st.session_state.rerun_after_upload = False
