@@ -94,26 +94,6 @@ def show_dashboard() -> None:
     if "rerun_after_upload" not in st.session_state:
         st.session_state.rerun_after_upload = False
 
-    left, right = st.columns([3, 2])
-    with left:
-        uploaded = st.file_uploader("Upload CSV", type=["csv"], key="uploader")
-
-    with right:
-        st.caption("Filters")
-        use_date_filter = st.checkbox("Enable date filter", value=False)
-
-        start_date = None
-        end_date = None
-        if use_date_filter:
-            a, b = st.columns(2)
-            with a:
-                start_date = st.date_input("Start date")
-            with b:
-                end_date = st.date_input("End date")
-
-        kind_label = st.selectbox("Type", ["All", "Income", "Expense"], index=0)
-        kind = kind_label.lower()
-
     if st.session_state.flash_msg:
         if st.session_state.flash_kind == "success":
             st.success(st.session_state.flash_msg)
@@ -121,6 +101,10 @@ def show_dashboard() -> None:
             st.error(st.session_state.flash_msg)
         st.session_state.flash_msg = None
         st.session_state.flash_kind = None
+
+    left, right = st.columns([3, 2])
+    with left:
+        uploaded = st.file_uploader("Upload CSV", type=["csv"], key="uploader")
 
     if uploaded is not None:
         sig = _file_sig(uploaded)
@@ -135,15 +119,21 @@ def show_dashboard() -> None:
         st.session_state.rerun_after_upload = False
         st.rerun()
 
+    st.subheader("Filters")
+    f1, f2, f3 = st.columns([2, 2, 2])
+
+    with f1:
+        start_date = st.date_input("Start date", value=None)
+    with f2:
+        end_date = st.date_input("End date", value=None)
+    with f3:
+        kind = st.selectbox("Type", options=["all", "income", "expense"], index=0)
+
     params: dict = {"kind": kind}
-    if use_date_filter:
-        if start_date and end_date and start_date > end_date:
-            st.error("Start date must be before or equal to end date.")
-            return
-        if start_date:
-            params["start_date"] = start_date.isoformat()
-        if end_date:
-            params["end_date"] = end_date.isoformat()
+    if start_date is not None:
+        params["start_date"] = start_date.isoformat()
+    if end_date is not None:
+        params["end_date"] = end_date.isoformat()
 
     df = None
     try:
@@ -151,73 +141,55 @@ def show_dashboard() -> None:
             f"{API_BASE}/transactions",
             headers=_auth_headers(),
             params=params,
-            timeout=8,
+            timeout=10,
         )
         if r.ok:
             rows = r.json()
             df = pd.DataFrame(rows)
-    except Exception:
-        df = None
-
-    summary = {"income": 0.0, "expenses": 0.0, "net": 0.0}
-    try:
-        r = requests.get(
-            f"{API_BASE}/transactions/summary",
-            headers=_auth_headers(),
-            params=params,
-            timeout=8,
-        )
-        if r.ok:
-            summary = r.json()
-    except Exception:
-        pass
+        else:
+            st.error(f"Backend error loading transactions. {r.status_code} {r.text}")
+            return
+    except Exception as e:
+        st.error(f"Could not contact backend. Details: {e}")
+        return
 
     if df is None or df.empty:
-        st.subheader("Transactions")
         st.info("No transactions found for the selected filters.")
-        st.subheader("Summary")
-        a, b, c = st.columns(3)
-        a.metric("Total Money In", f"€{float(summary.get('income', 0.0)):,.2f}")
-        b.metric("Total Money Out", f"€{float(summary.get('expenses', 0.0)):,.2f}")
-        c.metric("Net Movement", f"€{float(summary.get('net', 0.0)):,.2f}")
         return
 
     st.subheader("Transactions")
-
     df_display = df.copy()
 
-    if "merchant" in df_display.columns:
-        details = df_display["merchant"].fillna("").astype(str)
-    else:
-        details = pd.Series([""] * len(df_display))
-
-    if "description" in df_display.columns:
-        desc = df_display["description"].fillna("").astype(str)
-    else:
-        desc = pd.Series([""] * len(df_display))
-
-    details_missing = details.str.strip().eq("")
-    details.loc[details_missing] = desc.loc[details_missing]
-    df_display["Details"] = details
+    if "Details" not in df_display.columns:
+        if "merchant" in df_display.columns and "description" in df_display.columns:
+            df_display["Details"] = df_display["merchant"].fillna("").astype(str)
+            missing = df_display["Details"].str.strip().eq("")
+            df_display.loc[missing, "Details"] = (
+                df_display.loc[missing, "description"].fillna("").astype(str)
+            )
+        elif "merchant" in df_display.columns:
+            df_display["Details"] = df_display["merchant"].fillna("").astype(str)
+        elif "description" in df_display.columns:
+            df_display["Details"] = df_display["description"].fillna("").astype(str)
+        else:
+            df_display["Details"] = ""
 
     if "amount" in df_display.columns:
-        amt = pd.to_numeric(df_display["amount"], errors="coerce").fillna(0.0)
+        df_display["Money In"] = df_display["amount"].apply(
+            lambda x: float(x) if x is not None and float(x) > 0 else 0.0
+        )
+        df_display["Money Out"] = df_display["amount"].apply(
+            lambda x: abs(float(x)) if x is not None and float(x) < 0 else 0.0
+        )
     else:
-        amt = pd.Series([0.0] * len(df_display))
+        df_display["Money In"] = 0.0
+        df_display["Money Out"] = 0.0
 
-    df_display["Money In"] = amt.where(amt > 0, 0.0)
-    df_display["Money Out"] = (-amt).where(amt < 0, 0.0)
+    if "balance" not in df_display.columns:
+        df_display["balance"] = 0.0
 
-    if "balance" in df_display.columns:
-        bal = pd.to_numeric(df_display["balance"], errors="coerce").fillna(0.0)
-    else:
-        bal = pd.Series([0.0] * len(df_display))
-    df_display["balance"] = bal
-
-    df_display["Money In"] = df_display["Money In"].apply(lambda x: f"€{float(x):,.2f}")
-    df_display["Money Out"] = df_display["Money Out"].apply(
-        lambda x: f"€{float(x):,.2f}"
-    )
+    df_display["Money In"] = df_display["Money In"].apply(lambda x: f"€{x:,.2f}")
+    df_display["Money Out"] = df_display["Money Out"].apply(lambda x: f"€{x:,.2f}")
     df_display["balance"] = df_display["balance"].apply(lambda x: f"€{float(x):,.2f}")
 
     display_cols = [
@@ -227,11 +199,28 @@ def show_dashboard() -> None:
     ]
     st.dataframe(df_display[display_cols], use_container_width=True, hide_index=True)
 
+    summary = {"income": 0.0, "expenses": 0.0, "net": 0.0}
+    try:
+        r = requests.get(
+            f"{API_BASE}/transactions/summary",
+            headers=_auth_headers(),
+            params=params,
+            timeout=10,
+        )
+        if r.ok:
+            summary = r.json()
+        else:
+            st.error(f"Backend error loading summary. {r.status_code} {r.text}")
+            return
+    except Exception as e:
+        st.error(f"Could not contact backend for summary. Details: {e}")
+        return
+
     st.subheader("Summary")
     a, b, c = st.columns(3)
-    a.metric("Total Money In", f"€{float(summary.get('income', 0.0)):,.2f}")
-    b.metric("Total Money Out", f"€{float(summary.get('expenses', 0.0)):,.2f}")
-    c.metric("Net Movement", f"€{float(summary.get('net', 0.0)):,.2f}")
+    a.metric("Money in", f"€{summary['income']:,.2f}")
+    b.metric("Money out", f"€{summary['expenses']:,.2f}")
+    c.metric("Net change", f"€{summary['net']:,.2f}")
 
 
 def show_login() -> None:
