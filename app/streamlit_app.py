@@ -139,6 +139,15 @@ def show_dashboard() -> None:
             df_display["Money In"] = 0.0
             df_display["Money Out"] = 0.0
 
+        if "balance" not in df_display.columns:
+            df_display["balance"] = 0.0
+
+        df_display["Money In"] = df_display["Money In"].apply(lambda x: f"€{x:,.2f}")
+        df_display["Money Out"] = df_display["Money Out"].apply(lambda x: f"€{x:,.2f}")
+        df_display["balance"] = df_display["balance"].apply(
+            lambda x: f"€{float(x):,.2f}"
+        )
+
         if "merchant" in df_display.columns and "description" in df_display.columns:
             df_display["Details"] = df_display["merchant"].fillna("").astype(str)
             mask = df_display["Details"].str.strip().eq("")
