@@ -24,19 +24,6 @@ def _auth_headers() -> dict:
     return {"X-User-Email": email}
 
 
-def load_sample() -> pd.DataFrame:
-    sample_path = Path(__file__).resolve().parents[1] / "data" / "samples.csv"
-    if sample_path.exists():
-        return pd.read_csv(sample_path)
-    return pd.DataFrame(
-        {
-            "date": ["2025-10-01", "2025-10-02", "2025-10-03"],
-            "description": ["salary Job", "Coffee Shop", "Rent"],
-            "amount": [2500.00, -3.50, -1200.00],
-        }
-    )
-
-
 def load_transactions_from_db() -> pd.DataFrame:
     try:
         r = requests.get(
@@ -60,7 +47,11 @@ def _file_sig(uploaded_file) -> str:
 
 def upload_csv_to_backend(uploaded_file) -> tuple[bool, str]:
     try:
-        health = requests.get(f"{API_BASE}/health", headers=_auth_headers(), timeout=3)
+        health = requests.get(
+            f"{API_BASE}/health",
+            headers=_auth_headers(),
+            timeout=3,
+        )
         if not health.ok:
             return False, f"Backend not ready. {health.status_code} {health.text}"
 
@@ -92,15 +83,11 @@ def upload_csv_to_backend(uploaded_file) -> tuple[bool, str]:
 
 def show_dashboard() -> None:
     st.title("Open Source Finance Analytics")
-    st.caption("Upload a CSV or use the sample to preview metrics.")
 
     if "last_upload_sig" not in st.session_state:
         st.session_state.last_upload_sig = None
 
-    left, right = st.columns([3, 2])
-    with left:
-        use_sample = st.checkbox("Use sample data", value=False)
-        uploaded = st.file_uploader("Upload CSV", type=["csv"], key="uploader")
+    uploaded = st.file_uploader("Upload CSV", type=["csv"], key="uploader")
 
     df = None
 
@@ -132,34 +119,53 @@ def show_dashboard() -> None:
         st.session_state.rerun_after_upload = False
         st.rerun()
 
-    if use_sample:
-        df = load_sample()
-    else:
-        db_df = load_transactions_from_db()
-        if db_df is not None and not db_df.empty:
-            df = db_df
+    db_df = load_transactions_from_db()
+    if db_df is not None and not db_df.empty:
+        df = db_df
 
     if df is not None:
         st.subheader("Transactions")
 
-        display_cols = [
-            c
-            for c in [
-                "date",
-                "description",
-                "merchant",
-                "category",
-                "amount",
-                "balance",
-                "currency",
-            ]
-            if c in df.columns
-        ]
+        df_display = df.copy()
 
-        if display_cols:
-            st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
+        if "amount" in df_display.columns:
+            df_display["Money In"] = df_display["amount"].apply(
+                lambda x: float(x) if x is not None and float(x) > 0 else 0.0
+            )
+            df_display["Money Out"] = df_display["amount"].apply(
+                lambda x: abs(float(x)) if x is not None and float(x) < 0 else 0.0
+            )
         else:
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            df_display["Money In"] = 0.0
+            df_display["Money Out"] = 0.0
+
+        if "merchant" in df_display.columns and "description" in df_display.columns:
+            df_display["Details"] = df_display["merchant"].fillna("").astype(str)
+            mask = df_display["Details"].str.strip().eq("")
+            df_display.loc[mask, "Details"] = (
+                df_display.loc[mask, "description"].fillna("").astype(str)
+            )
+        elif "merchant" in df_display.columns:
+            df_display["Details"] = df_display["merchant"].fillna("").astype(str)
+        elif "description" in df_display.columns:
+            df_display["Details"] = df_display["description"].fillna("").astype(str)
+        else:
+            df_display["Details"] = ""
+
+        columns = []
+        if "date" in df_display.columns:
+            columns.append("date")
+        columns.append("Details")
+        columns.append("Money In")
+        columns.append("Money Out")
+        if "balance" in df_display.columns:
+            columns.append("balance")
+
+        st.dataframe(
+            df_display[columns],
+            use_container_width=True,
+            hide_index=True,
+        )
 
         summary = {"income": 0.0, "expenses": 0.0, "net": 0.0}
 
@@ -176,18 +182,15 @@ def show_dashboard() -> None:
 
         st.subheader("Summary")
         a, b, c = st.columns(3)
-        a.metric("Total income", f"€{summary['income']:,.2f}")
-        b.metric("Total expenses", f"€{summary['expenses']:,.2f}")
-        c.metric("Net", f"€{summary['net']:,.2f}")
+        a.metric("Total Money In", f"€{summary['income']:,.2f}")
+        b.metric("Total Money Out", f"€{summary['expenses']:,.2f}")
+        c.metric("Net Movement", f"€{summary['net']:,.2f}")
     else:
-        st.info(
-            "Upload a CSV to ingest into PostgreSQL, or enable sample data to preview metrics."
-        )
+        st.info("Upload a CSV to ingest into PostgreSQL.")
 
 
 def show_login() -> None:
     st.title("FYP Finance login")
-    st.caption("Enter your email and password to access the dashboard.")
 
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
