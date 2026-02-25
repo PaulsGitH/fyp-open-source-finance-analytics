@@ -87,16 +87,32 @@ def show_dashboard() -> None:
     if "last_upload_sig" not in st.session_state:
         st.session_state.last_upload_sig = None
 
-    left, right = st.columns([3, 2])
-    with left:
-        uploaded = st.file_uploader("Upload CSV", type=["csv"], key="uploader")
-
     if "flash_msg" not in st.session_state:
         st.session_state.flash_msg = None
     if "flash_kind" not in st.session_state:
         st.session_state.flash_kind = None
     if "rerun_after_upload" not in st.session_state:
         st.session_state.rerun_after_upload = False
+
+    left, right = st.columns([3, 2])
+    with left:
+        uploaded = st.file_uploader("Upload CSV", type=["csv"], key="uploader")
+
+    with right:
+        st.caption("Filters")
+        use_date_filter = st.checkbox("Enable date filter", value=False)
+
+        start_date = None
+        end_date = None
+        if use_date_filter:
+            a, b = st.columns(2)
+            with a:
+                start_date = st.date_input("Start date")
+            with b:
+                end_date = st.date_input("End date")
+
+        kind_label = st.selectbox("Type", ["All", "Income", "Expense"], index=0)
+        kind = kind_label.lower()
 
     if st.session_state.flash_msg:
         if st.session_state.flash_kind == "success":
@@ -119,29 +135,15 @@ def show_dashboard() -> None:
         st.session_state.rerun_after_upload = False
         st.rerun()
 
-    st.subheader("Filters")
-
-    kind = st.selectbox(
-        "Transaction type",
-        options=["all", "income", "expense"],
-        index=0,
-    )
-
-    date_filter_enabled = st.checkbox("Enable date range filter", value=False)
-
-    start_date = None
-    end_date = None
-    if date_filter_enabled:
-        c1, c2 = st.columns(2)
-        with c1:
-            start_date = st.date_input("Start date")
-        with c2:
-            end_date = st.date_input("End date")
-
-    params = {"kind": kind}
-    if date_filter_enabled and start_date and end_date:
-        params["start_date"] = start_date.isoformat()
-        params["end_date"] = end_date.isoformat()
+    params: dict = {"kind": kind}
+    if use_date_filter:
+        if start_date and end_date and start_date > end_date:
+            st.error("Start date must be before or equal to end date.")
+            return
+        if start_date:
+            params["start_date"] = start_date.isoformat()
+        if end_date:
+            params["end_date"] = end_date.isoformat()
 
     df = None
     try:
@@ -149,63 +151,13 @@ def show_dashboard() -> None:
             f"{API_BASE}/transactions",
             headers=_auth_headers(),
             params=params,
-            timeout=5,
+            timeout=8,
         )
         if r.ok:
             rows = r.json()
-            if rows:
-                df = pd.DataFrame(rows)
+            df = pd.DataFrame(rows)
     except Exception:
         df = None
-
-    if df is not None:
-        st.subheader("Transactions")
-
-        df_display = df.copy()
-
-        if "merchant" in df_display.columns and "description" in df_display.columns:
-            df_display["Details"] = df_display["merchant"].fillna("").astype(str)
-            missing = df_display["Details"].str.strip().eq("")
-            df_display.loc[missing, "Details"] = (
-                df_display.loc[missing, "description"].fillna("").astype(str)
-            )
-        elif "merchant" in df_display.columns:
-            df_display["Details"] = df_display["merchant"].fillna("").astype(str)
-        elif "description" in df_display.columns:
-            df_display["Details"] = df_display["description"].fillna("").astype(str)
-        else:
-            df_display["Details"] = ""
-
-        if "amount" in df_display.columns:
-            df_display["Money In"] = df_display["amount"].apply(
-                lambda x: float(x) if x is not None and float(x) > 0 else 0.0
-            )
-            df_display["Money Out"] = df_display["amount"].apply(
-                lambda x: abs(float(x)) if x is not None and float(x) < 0 else 0.0
-            )
-        else:
-            df_display["Money In"] = 0.0
-            df_display["Money Out"] = 0.0
-
-        if "balance" not in df_display.columns:
-            df_display["balance"] = 0.0
-
-        df_display["Money In"] = df_display["Money In"].apply(lambda x: f"€{x:,.2f}")
-        df_display["Money Out"] = df_display["Money Out"].apply(lambda x: f"€{x:,.2f}")
-        df_display["balance"] = df_display["balance"].apply(
-            lambda x: f"€{float(x):,.2f}"
-        )
-
-        display_cols = ["date", "Details", "Money In", "Money Out", "balance"]
-        display_cols = [c for c in display_cols if c in df_display.columns]
-
-        st.dataframe(
-            df_display[display_cols],
-            use_container_width=True,
-            hide_index=True,
-        )
-    else:
-        st.info("No transactions found for selected filters.")
 
     summary = {"income": 0.0, "expenses": 0.0, "net": 0.0}
     try:
@@ -213,18 +165,73 @@ def show_dashboard() -> None:
             f"{API_BASE}/transactions/summary",
             headers=_auth_headers(),
             params=params,
-            timeout=5,
+            timeout=8,
         )
         if r.ok:
             summary = r.json()
     except Exception:
         pass
 
+    if df is None or df.empty:
+        st.subheader("Transactions")
+        st.info("No transactions found for the selected filters.")
+        st.subheader("Summary")
+        a, b, c = st.columns(3)
+        a.metric("Total Money In", f"€{float(summary.get('income', 0.0)):,.2f}")
+        b.metric("Total Money Out", f"€{float(summary.get('expenses', 0.0)):,.2f}")
+        c.metric("Net Movement", f"€{float(summary.get('net', 0.0)):,.2f}")
+        return
+
+    st.subheader("Transactions")
+
+    df_display = df.copy()
+
+    if "merchant" in df_display.columns:
+        details = df_display["merchant"].fillna("").astype(str)
+    else:
+        details = pd.Series([""] * len(df_display))
+
+    if "description" in df_display.columns:
+        desc = df_display["description"].fillna("").astype(str)
+    else:
+        desc = pd.Series([""] * len(df_display))
+
+    details_missing = details.str.strip().eq("")
+    details.loc[details_missing] = desc.loc[details_missing]
+    df_display["Details"] = details
+
+    if "amount" in df_display.columns:
+        amt = pd.to_numeric(df_display["amount"], errors="coerce").fillna(0.0)
+    else:
+        amt = pd.Series([0.0] * len(df_display))
+
+    df_display["Money In"] = amt.where(amt > 0, 0.0)
+    df_display["Money Out"] = (-amt).where(amt < 0, 0.0)
+
+    if "balance" in df_display.columns:
+        bal = pd.to_numeric(df_display["balance"], errors="coerce").fillna(0.0)
+    else:
+        bal = pd.Series([0.0] * len(df_display))
+    df_display["balance"] = bal
+
+    df_display["Money In"] = df_display["Money In"].apply(lambda x: f"€{float(x):,.2f}")
+    df_display["Money Out"] = df_display["Money Out"].apply(
+        lambda x: f"€{float(x):,.2f}"
+    )
+    df_display["balance"] = df_display["balance"].apply(lambda x: f"€{float(x):,.2f}")
+
+    display_cols = [
+        c
+        for c in ["date", "Details", "Money In", "Money Out", "balance"]
+        if c in df_display.columns
+    ]
+    st.dataframe(df_display[display_cols], use_container_width=True, hide_index=True)
+
     st.subheader("Summary")
     a, b, c = st.columns(3)
-    a.metric("Total Money In", f"€{summary['income']:,.2f}")
-    b.metric("Total Money Out", f"€{summary['expenses']:,.2f}")
-    c.metric("Net Movement", f"€{summary['net']:,.2f}")
+    a.metric("Total Money In", f"€{float(summary.get('income', 0.0)):,.2f}")
+    b.metric("Total Money Out", f"€{float(summary.get('expenses', 0.0)):,.2f}")
+    c.metric("Net Movement", f"€{float(summary.get('net', 0.0)):,.2f}")
 
 
 def show_login() -> None:
