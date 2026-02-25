@@ -87,9 +87,9 @@ def show_dashboard() -> None:
     if "last_upload_sig" not in st.session_state:
         st.session_state.last_upload_sig = None
 
-    uploaded = st.file_uploader("Upload CSV", type=["csv"], key="uploader")
-
-    df = None
+    left, right = st.columns([3, 2])
+    with left:
+        uploaded = st.file_uploader("Upload CSV", type=["csv"], key="uploader")
 
     if "flash_msg" not in st.session_state:
         st.session_state.flash_msg = None
@@ -119,14 +119,62 @@ def show_dashboard() -> None:
         st.session_state.rerun_after_upload = False
         st.rerun()
 
-    db_df = load_transactions_from_db()
-    if db_df is not None and not db_df.empty:
-        df = db_df
+    st.subheader("Filters")
+
+    kind = st.selectbox(
+        "Transaction type",
+        options=["all", "income", "expense"],
+        index=0,
+    )
+
+    date_filter_enabled = st.checkbox("Enable date range filter", value=False)
+
+    start_date = None
+    end_date = None
+    if date_filter_enabled:
+        c1, c2 = st.columns(2)
+        with c1:
+            start_date = st.date_input("Start date")
+        with c2:
+            end_date = st.date_input("End date")
+
+    params = {"kind": kind}
+    if date_filter_enabled and start_date and end_date:
+        params["start_date"] = start_date.isoformat()
+        params["end_date"] = end_date.isoformat()
+
+    df = None
+    try:
+        r = requests.get(
+            f"{API_BASE}/transactions",
+            headers=_auth_headers(),
+            params=params,
+            timeout=5,
+        )
+        if r.ok:
+            rows = r.json()
+            if rows:
+                df = pd.DataFrame(rows)
+    except Exception:
+        df = None
 
     if df is not None:
         st.subheader("Transactions")
 
         df_display = df.copy()
+
+        if "merchant" in df_display.columns and "description" in df_display.columns:
+            df_display["Details"] = df_display["merchant"].fillna("").astype(str)
+            missing = df_display["Details"].str.strip().eq("")
+            df_display.loc[missing, "Details"] = (
+                df_display.loc[missing, "description"].fillna("").astype(str)
+            )
+        elif "merchant" in df_display.columns:
+            df_display["Details"] = df_display["merchant"].fillna("").astype(str)
+        elif "description" in df_display.columns:
+            df_display["Details"] = df_display["description"].fillna("").astype(str)
+        else:
+            df_display["Details"] = ""
 
         if "amount" in df_display.columns:
             df_display["Money In"] = df_display["amount"].apply(
@@ -148,54 +196,35 @@ def show_dashboard() -> None:
             lambda x: f"€{float(x):,.2f}"
         )
 
-        if "merchant" in df_display.columns and "description" in df_display.columns:
-            df_display["Details"] = df_display["merchant"].fillna("").astype(str)
-            mask = df_display["Details"].str.strip().eq("")
-            df_display.loc[mask, "Details"] = (
-                df_display.loc[mask, "description"].fillna("").astype(str)
-            )
-        elif "merchant" in df_display.columns:
-            df_display["Details"] = df_display["merchant"].fillna("").astype(str)
-        elif "description" in df_display.columns:
-            df_display["Details"] = df_display["description"].fillna("").astype(str)
-        else:
-            df_display["Details"] = ""
-
-        columns = []
-        if "date" in df_display.columns:
-            columns.append("date")
-        columns.append("Details")
-        columns.append("Money In")
-        columns.append("Money Out")
-        if "balance" in df_display.columns:
-            columns.append("balance")
+        display_cols = ["date", "Details", "Money In", "Money Out", "balance"]
+        display_cols = [c for c in display_cols if c in df_display.columns]
 
         st.dataframe(
-            df_display[columns],
+            df_display[display_cols],
             use_container_width=True,
             hide_index=True,
         )
-
-        summary = {"income": 0.0, "expenses": 0.0, "net": 0.0}
-
-        try:
-            r = requests.get(
-                f"{API_BASE}/transactions/summary",
-                headers=_auth_headers(),
-                timeout=5,
-            )
-            if r.ok:
-                summary = r.json()
-        except Exception:
-            pass
-
-        st.subheader("Summary")
-        a, b, c = st.columns(3)
-        a.metric("Total Money In", f"€{summary['income']:,.2f}")
-        b.metric("Total Money Out", f"€{summary['expenses']:,.2f}")
-        c.metric("Net Movement", f"€{summary['net']:,.2f}")
     else:
-        st.info("Upload a CSV to ingest into PostgreSQL.")
+        st.info("No transactions found for selected filters.")
+
+    summary = {"income": 0.0, "expenses": 0.0, "net": 0.0}
+    try:
+        r = requests.get(
+            f"{API_BASE}/transactions/summary",
+            headers=_auth_headers(),
+            params=params,
+            timeout=5,
+        )
+        if r.ok:
+            summary = r.json()
+    except Exception:
+        pass
+
+    st.subheader("Summary")
+    a, b, c = st.columns(3)
+    a.metric("Total Money In", f"€{summary['income']:,.2f}")
+    b.metric("Total Money Out", f"€{summary['expenses']:,.2f}")
+    c.metric("Net Movement", f"€{summary['net']:,.2f}")
 
 
 def show_login() -> None:
