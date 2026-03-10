@@ -106,6 +106,8 @@ def list_transactions(
                 amount=float(row.amount) if row.amount is not None else 0.0,
                 balance=float(row.balance) if row.balance is not None else None,
                 currency=getattr(row, "currency", None),
+                anomaly_score=getattr(row, "anomaly_score", None),
+                is_anomaly=getattr(row, "is_anomaly", None),
                 user_id=getattr(row, "user_id", None),
             )
         )

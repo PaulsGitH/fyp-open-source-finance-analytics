@@ -55,6 +55,8 @@ class TransactionOut(BaseModel):
     amount: float
     balance: float | None = None
     currency: str | None = None
+    anomaly_score: float | None = None
+    is_anomaly: bool | None = None
     user_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
