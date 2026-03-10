@@ -1,7 +1,5 @@
 import os
 import json
-from pathlib import Path
-import hashlib
 
 import pandas as pd
 import requests
@@ -39,12 +37,6 @@ def load_transactions_from_db() -> pd.DataFrame:
         return None
 
 
-def _file_sig(uploaded_file) -> str:
-    b = uploaded_file.getvalue()
-    h = hashlib.sha256(b).hexdigest()[:16]
-    return f"{uploaded_file.name}|{len(b)}|{h}"
-
-
 def upload_csv_to_backend(uploaded_file) -> tuple[bool, str]:
     try:
         health = requests.get(
@@ -65,16 +57,18 @@ def upload_csv_to_backend(uploaded_file) -> tuple[bool, str]:
             f"{API_BASE}/transactions/upload",
             files=files,
             headers=_auth_headers(),
-            timeout=20,
+            timeout=30,
         )
 
         if r.ok:
             body = r.json()
             inserted = body.get("inserted", 0)
             skipped = body.get("skipped", 0)
+            categorised = body.get("categorised", 0)
             return (
                 True,
-                f"CSV uploaded successfully. Inserted {inserted}. Skipped {skipped}.",
+                f"CSV uploaded successfully. Inserted {inserted}. "
+                f"Skipped {skipped}. Categorised {categorised}.",
             )
         return False, f"Upload failed. {r.status_code} {r.text}"
     except Exception as e:
@@ -83,9 +77,6 @@ def upload_csv_to_backend(uploaded_file) -> tuple[bool, str]:
 
 def show_dashboard() -> None:
     st.title("Open Source Finance Analytics")
-
-    if "last_upload_sig" not in st.session_state:
-        st.session_state.last_upload_sig = None
 
     if "flash_msg" not in st.session_state:
         st.session_state.flash_msg = None
@@ -102,15 +93,17 @@ def show_dashboard() -> None:
         st.session_state.flash_msg = None
         st.session_state.flash_kind = None
 
-    left, right = st.columns([3, 2])
-    with left:
-        uploaded = st.file_uploader("Upload CSV", type=["csv"], key="uploader")
+    st.subheader("Upload CSV")
+    uploaded = st.file_uploader("Choose a CSV file", type=["csv"], key="uploader")
 
-    if uploaded is not None:
-        sig = _file_sig(uploaded)
-        if st.session_state.last_upload_sig != sig:
+    upload_clicked = st.button("Upload selected CSV", type="primary")
+
+    if upload_clicked:
+        if uploaded is None:
+            st.session_state.flash_msg = "Please choose a CSV file before uploading."
+            st.session_state.flash_kind = "error"
+        else:
             ok, msg = upload_csv_to_backend(uploaded)
-            st.session_state.last_upload_sig = sig
             st.session_state.flash_msg = msg
             st.session_state.flash_kind = "success" if ok else "error"
             st.session_state.rerun_after_upload = ok
