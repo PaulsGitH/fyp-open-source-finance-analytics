@@ -2,11 +2,7 @@ from datetime import date
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel
-from pydantic import ConfigDict
-
-
-# Existing summary models for the hello world prototype
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 class Transaction(BaseModel):
@@ -25,9 +21,6 @@ class SummaryResponse(BaseModel):
     net: float
 
 
-# New models for the PostgreSQL backed transactions API
-
-
 class TransactionBase(BaseModel):
     txn_date: date
     description: str
@@ -40,9 +33,6 @@ class TransactionDB(TransactionBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
-
-
-from pydantic import BaseModel, EmailStr
 
 
 class LoginRequest(BaseModel):
@@ -67,3 +57,15 @@ class TransactionOut(BaseModel):
     user_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UploadResponse(BaseModel):
+    inserted: int
+    skipped: int
+    categorised: int
+    errors: list[dict]
+
+
+class CategoryBreakdownItem(BaseModel):
+    category: str
+    count: int

@@ -169,7 +169,51 @@ def transactions_summary(
     )
 
 
-@app.post("/transactions/upload")
+@app.get(
+    "/transactions/category-breakdown",
+    response_model=List[schemas.CategoryBreakdownItem],
+)
+def transaction_category_breakdown(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+    start_date: Optional[date] = Query(default=None),
+    end_date: Optional[date] = Query(default=None),
+):
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be <= end_date")
+
+    q = db.query(
+        models.Transaction.category,
+        func.count(models.Transaction.id),
+    ).filter(
+        models.Transaction.user_id == current_user.id,
+        models.Transaction.category.is_not(None),
+    )
+
+    if start_date is not None:
+        q = q.filter(models.Transaction.date >= start_date)
+    if end_date is not None:
+        q = q.filter(models.Transaction.date <= end_date)
+
+    rows = (
+        q.group_by(models.Transaction.category)
+        .order_by(func.count(models.Transaction.id).desc(), models.Transaction.category)
+        .all()
+    )
+
+    result = []
+    for category, count in rows:
+        result.append(
+            schemas.CategoryBreakdownItem(
+                category=category,
+                count=count,
+            )
+        )
+
+    return result
+
+
+@app.post("/transactions/upload", response_model=schemas.UploadResponse)
 def upload_transactions_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -288,12 +332,12 @@ def upload_transactions_csv(
             errors.append({"row": int(i), "error": str(e)})
 
     db.commit()
-    return {
-        "inserted": inserted,
-        "skipped": skipped,
-        "categorised": categorised,
-        "errors": errors,
-    }
+    return schemas.UploadResponse(
+        inserted=inserted,
+        skipped=skipped,
+        categorised=categorised,
+        errors=errors,
+    )
 
 
 @app.post("/login", response_model=schemas.LoginResponse)
