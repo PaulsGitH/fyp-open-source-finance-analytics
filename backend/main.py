@@ -10,6 +10,7 @@ from sqlalchemy import func, case
 
 from .db import SessionLocal
 from . import models, schemas, auth
+from .categoriser import categoriser
 
 
 app = FastAPI(
@@ -216,6 +217,7 @@ def upload_transactions_csv(
 
     inserted = 0
     skipped = 0
+    categorised = 0
     errors = []
 
     for i, row in df.iterrows():
@@ -255,12 +257,21 @@ def upload_transactions_csv(
                     skipped += 1
                     continue
 
+            raw_category = categoriser.normalise_category(row.get("category"))
+
+            if raw_category is None:
+                raw_category = categoriser.categorise(
+                    description=row.get("description"),
+                    merchant=row.get("merchant"),
+                )
+                categorised += 1
+
             txn = models.Transaction(
                 transaction_id=txn_id,
                 date=parsed_date,
                 description=row.get("description"),
                 merchant=row.get("merchant"),
-                category=row.get("category"),
+                category=raw_category,
                 amount=amount,
                 balance=row.get("balance"),
                 currency=row.get("currency"),
@@ -277,7 +288,12 @@ def upload_transactions_csv(
             errors.append({"row": int(i), "error": str(e)})
 
     db.commit()
-    return {"inserted": inserted, "skipped": skipped, "errors": errors}
+    return {
+        "inserted": inserted,
+        "skipped": skipped,
+        "categorised": categorised,
+        "errors": errors,
+    }
 
 
 @app.post("/login", response_model=schemas.LoginResponse)
