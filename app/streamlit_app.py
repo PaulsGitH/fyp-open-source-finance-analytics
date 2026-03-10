@@ -165,10 +165,11 @@ def show_dashboard():
         cols[1].write(details)
 
         new_category = cols[2].selectbox(
-            "",
+            "Category",
             CATEGORIES,
             index=CATEGORIES.index(category) if category in CATEGORIES else 0,
             key=f"cat_{txn_id}",
+            label_visibility="collapsed",
         )
 
         if new_category != category:

@@ -79,3 +79,14 @@ class CategoryUpdateRequest(BaseModel):
 class CategoryUpdateResponse(BaseModel):
     id: int
     category: str
+
+
+class TransactionAnomalyOut(BaseModel):
+    id: int | None = None
+    date: Optional[str] = None
+    description: str
+    merchant: str | None = None
+    category: str | None = None
+    amount: float
+    anomaly_score: float
+    is_anomaly: bool

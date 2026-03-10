@@ -11,6 +11,7 @@ from sqlalchemy import func, case
 from .db import SessionLocal
 from . import models, schemas, auth
 from .categoriser import categoriser
+from .anomaly import score_transactions
 
 
 app = FastAPI(
@@ -214,6 +215,58 @@ def transaction_category_breakdown(
     return result
 
 
+@app.get(
+    "/transactions/anomalies",
+    response_model=List[schemas.TransactionAnomalyOut],
+)
+def list_transaction_anomalies(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+    start_date: Optional[date] = Query(default=None),
+    end_date: Optional[date] = Query(default=None),
+    kind: str = Query(default="all", pattern="^(all|income|expense)$"),
+):
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be <= end_date")
+
+    q = db.query(models.Transaction).filter(
+        models.Transaction.user_id == current_user.id
+    )
+
+    if start_date is not None:
+        q = q.filter(models.Transaction.date >= start_date)
+    if end_date is not None:
+        q = q.filter(models.Transaction.date <= end_date)
+
+    if kind == "income":
+        q = q.filter(models.Transaction.amount > 0)
+    elif kind == "expense":
+        q = q.filter(models.Transaction.amount < 0)
+
+    rows = q.order_by(models.Transaction.date).all()
+    anomaly_results = score_transactions(rows)
+
+    score_map = {item.transaction_id: item for item in anomaly_results}
+
+    result = []
+    for row in rows:
+        anomaly = score_map.get(getattr(row, "id", None))
+        result.append(
+            schemas.TransactionAnomalyOut(
+                id=getattr(row, "id", None),
+                date=row.date.isoformat() if row.date is not None else None,
+                description=row.description or "",
+                merchant=getattr(row, "merchant", None),
+                category=getattr(row, "category", None),
+                amount=float(row.amount) if row.amount is not None else 0.0,
+                anomaly_score=anomaly.anomaly_score if anomaly else 0.0,
+                is_anomaly=anomaly.is_anomaly if anomaly else False,
+            )
+        )
+
+    return result
+
+
 @app.post("/transactions/upload", response_model=schemas.UploadResponse)
 def upload_transactions_csv(
     file: UploadFile = File(...),
@@ -351,7 +404,6 @@ def update_transaction_category(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-
     txn = (
         db.query(models.Transaction)
         .filter(
