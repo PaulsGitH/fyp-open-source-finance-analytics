@@ -96,6 +96,7 @@ def list_transactions(
     for row in rows:
         result.append(
             schemas.TransactionOut(
+                id=getattr(row, "id", None),
                 transaction_id=getattr(row, "transaction_id", None),
                 date=row.date.isoformat() if row.date is not None else None,
                 description=row.description or "",
@@ -337,6 +338,45 @@ def upload_transactions_csv(
         skipped=skipped,
         categorised=categorised,
         errors=errors,
+    )
+
+
+@app.patch(
+    "/transactions/{transaction_id}/category",
+    response_model=schemas.CategoryUpdateResponse,
+)
+def update_transaction_category(
+    transaction_id: int,
+    payload: schemas.CategoryUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+
+    txn = (
+        db.query(models.Transaction)
+        .filter(
+            models.Transaction.id == transaction_id,
+            models.Transaction.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    new_category = payload.category.strip().lower()
+
+    if not new_category:
+        raise HTTPException(status_code=400, detail="Category cannot be empty")
+
+    txn.category = new_category
+
+    db.commit()
+    db.refresh(txn)
+
+    return schemas.CategoryUpdateResponse(
+        id=txn.id,
+        category=txn.category,
     )
 
 

@@ -46,6 +46,7 @@ class LoginResponse(BaseModel):
 
 
 class TransactionOut(BaseModel):
+    id: int | None = None
     transaction_id: str | None = None
     date: Optional[str] = None
     description: str
@@ -69,3 +70,12 @@ class UploadResponse(BaseModel):
 class CategoryBreakdownItem(BaseModel):
     category: str
     count: int
+
+
+class CategoryUpdateRequest(BaseModel):
+    category: str
+
+
+class CategoryUpdateResponse(BaseModel):
+    id: int
+    category: str
