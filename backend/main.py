@@ -386,6 +386,26 @@ def upload_transactions_csv(
             errors.append({"row": int(i), "error": str(e)})
 
     db.commit()
+
+    # recompute anomalies for this user
+    rows = (
+        db.query(models.Transaction).filter(models.Transaction.user_id == user_id).all()
+    )
+
+    results = score_transactions(rows)
+
+    for result in results:
+        txn = (
+            db.query(models.Transaction)
+            .filter(models.Transaction.id == result.transaction_id)
+            .first()
+        )
+    if txn:
+        txn.anomaly_score = result.anomaly_score
+        txn.is_anomaly = result.is_anomaly
+
+    db.commit()
+
     return schemas.UploadResponse(
         inserted=inserted,
         skipped=skipped,
