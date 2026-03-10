@@ -167,6 +167,15 @@ def show_dashboard() -> None:
         else:
             df_display["Details"] = ""
 
+    if "category" in df_display.columns:
+        df_display["Category"] = (
+            df_display["category"].fillna("other").astype(str).str.strip().str.lower()
+        )
+        empty_category = df_display["Category"].eq("")
+        df_display.loc[empty_category, "Category"] = "other"
+    else:
+        df_display["Category"] = "other"
+
     if "amount" in df_display.columns:
         df_display["Money In"] = df_display["amount"].apply(
             lambda x: float(x) if x is not None and float(x) > 0 else 0.0
@@ -187,7 +196,7 @@ def show_dashboard() -> None:
 
     display_cols = [
         c
-        for c in ["date", "Details", "Money In", "Money Out", "balance"]
+        for c in ["date", "Details", "Category", "Money In", "Money Out", "balance"]
         if c in df_display.columns
     ]
     st.dataframe(df_display[display_cols], use_container_width=True, hide_index=True)
