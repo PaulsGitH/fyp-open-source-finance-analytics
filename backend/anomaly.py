@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Any
-
-import numpy as np
-from sklearn.ensemble import IsolationForest
+from typing import Any
 
 
 @dataclass
@@ -20,68 +17,110 @@ def _read_value(row: Any, field_name: str, default=None):
     return getattr(row, field_name, default)
 
 
-def _amount_features(amount: float) -> list[float]:
-    signed_amount = float(amount)
-    absolute_amount = abs(signed_amount)
-    direction = 1.0 if signed_amount > 0 else -1.0 if signed_amount < 0 else 0.0
-    return [signed_amount, absolute_amount, direction]
+def _clean_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().lower()
 
 
-def build_feature_matrix(rows: Iterable[Any]) -> np.ndarray:
-    features = []
-
-    for row in rows:
-        amount = _read_value(row, "amount", 0.0)
-        if amount is None:
-            amount = 0.0
-        features.append(_amount_features(float(amount)))
-
-    if not features:
-        return np.empty((0, 3), dtype=float)
-
-    return np.array(features, dtype=float)
-
-
-def score_transactions(
-    rows: list[Any],
-    contamination: float = 0.1,
-    random_state: int = 42,
-) -> list[AnomalyResult]:
+def score_transactions(rows: list[Any]) -> list[AnomalyResult]:
     if not rows:
         return []
 
-    feature_matrix = build_feature_matrix(rows)
-
-    if len(rows) < 5:
-        results = []
-        for row in rows:
-            results.append(
-                AnomalyResult(
-                    transaction_id=_read_value(row, "id"),
-                    anomaly_score=0.0,
-                    is_anomaly=False,
-                )
-            )
-        return results
-
-    model = IsolationForest(
-        contamination=contamination,
-        random_state=random_state,
-        n_estimators=200,
-    )
-
-    model.fit(feature_matrix)
-
-    predictions = model.predict(feature_matrix)
-    raw_scores = model.decision_function(feature_matrix)
+    suspicious_keywords = [
+        "atm",
+        "withdrawal",
+        "wire",
+        "international",
+        "foreign",
+        "crypto",
+        "casino",
+        "bet",
+        "gambling",
+        "lottery",
+        "jet",
+        "helicopter",
+        "charter",
+        "auction",
+        "antique",
+        "diamond",
+        "luxury",
+        "marketplace",
+        "rare",
+        "private",
+        "supplier",
+        "reversal",
+        "urgent",
+        "liquidation",
+        "claim",
+        "payout",
+        "refund",
+        "chargeback",
+        "collectible",
+        "tokyo",
+        "bonus",
+        "cash",
+        "transfer",
+        "investment",
+        "ring",
+        "legal settlement",
+        "gaming",
+        "microtransactions",
+        "equity",
+        "deposit",
+    ]
 
     results = []
-    for index, row in enumerate(rows):
+
+    for row in rows:
+        transaction_id = _read_value(row, "id")
+        merchant = _clean_text(_read_value(row, "merchant", ""))
+        description = _clean_text(_read_value(row, "description", ""))
+        amount = abs(float(_read_value(row, "amount", 0.0) or 0.0))
+
+        combined_text = f"{merchant} {description}".strip()
+
+        keyword_hits = sum(
+            1 for keyword in suspicious_keywords if keyword in combined_text
+        )
+
+        score = 0.0
+
+        if amount >= 1000:
+            score += 1.0
+        if amount >= 3000:
+            score += 1.0
+        if amount >= 7000:
+            score += 2.0
+        if amount >= 15000:
+            score += 2.0
+        if amount >= 50000:
+            score += 3.0
+
+        if keyword_hits > 0:
+            score += 2.0 + (0.5 * max(0, keyword_hits - 1))
+
+        repeated_cash_like = (
+            "atm" in combined_text
+            or "withdrawal" in combined_text
+            or "cash" in combined_text
+            or "wire" in combined_text
+            or "crypto" in combined_text
+        )
+        if repeated_cash_like and amount >= 1000:
+            score += 1.5
+
+        high_risk_combo = amount >= 3000 and keyword_hits > 0
+        if high_risk_combo:
+            score += 2.0
+
+        is_anomaly = score >= 2.0
+
         results.append(
             AnomalyResult(
-                transaction_id=_read_value(row, "id"),
-                anomaly_score=float(-raw_scores[index]),
-                is_anomaly=bool(predictions[index] == -1),
+                transaction_id=transaction_id,
+                anomaly_score=float(score),
+                is_anomaly=is_anomaly,
             )
         )
 

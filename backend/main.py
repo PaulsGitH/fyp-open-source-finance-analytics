@@ -92,9 +92,12 @@ def list_transactions(
         q = q.filter(models.Transaction.amount < 0)
 
     rows = q.order_by(models.Transaction.date).all()
+    anomaly_results = score_transactions(rows)
+    anomaly_map = {item.transaction_id: item for item in anomaly_results}
 
     result = []
     for row in rows:
+        anomaly = anomaly_map.get(getattr(row, "id", None))
         result.append(
             schemas.TransactionOut(
                 id=getattr(row, "id", None),
@@ -106,8 +109,8 @@ def list_transactions(
                 amount=float(row.amount) if row.amount is not None else 0.0,
                 balance=float(row.balance) if row.balance is not None else None,
                 currency=getattr(row, "currency", None),
-                anomaly_score=getattr(row, "anomaly_score", None),
-                is_anomaly=getattr(row, "is_anomaly", None),
+                anomaly_score=anomaly.anomaly_score if anomaly else 0.0,
+                is_anomaly=anomaly.is_anomaly if anomaly else False,
                 user_id=getattr(row, "user_id", None),
             )
         )
@@ -247,12 +250,11 @@ def list_transaction_anomalies(
 
     rows = q.order_by(models.Transaction.date).all()
     anomaly_results = score_transactions(rows)
-
-    score_map = {item.transaction_id: item for item in anomaly_results}
+    anomaly_map = {item.transaction_id: item for item in anomaly_results}
 
     result = []
     for row in rows:
-        anomaly = score_map.get(getattr(row, "id", None))
+        anomaly = anomaly_map.get(getattr(row, "id", None))
         result.append(
             schemas.TransactionAnomalyOut(
                 id=getattr(row, "id", None),
@@ -388,26 +390,6 @@ def upload_transactions_csv(
             errors.append({"row": int(i), "error": str(e)})
 
     db.commit()
-
-    # recompute anomalies for this user
-    rows = (
-        db.query(models.Transaction).filter(models.Transaction.user_id == user_id).all()
-    )
-
-    results = score_transactions(rows)
-
-    for result in results:
-        txn = (
-            db.query(models.Transaction)
-            .filter(models.Transaction.id == result.transaction_id)
-            .first()
-        )
-    if txn:
-        txn.anomaly_score = result.anomaly_score
-        txn.is_anomaly = result.is_anomaly
-
-    db.commit()
-
     return schemas.UploadResponse(
         inserted=inserted,
         skipped=skipped,
