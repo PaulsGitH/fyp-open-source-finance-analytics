@@ -1,5 +1,6 @@
 import os
 import json
+import math
 
 import pandas as pd
 import requests
@@ -39,22 +40,29 @@ def _auth_headers():
     return {"X-User-Email": email}
 
 
-def update_category(transaction_id, new_category):
+def _safe_balance_text(value):
+    if value is None:
+        return ""
+    try:
+        numeric = float(value)
+        if math.isnan(numeric):
+            return ""
+        return f"€{numeric:,.2f}"
+    except Exception:
+        return ""
 
+
+def update_category(transaction_id, new_category):
     r = requests.patch(
         f"{API_BASE}/transactions/{transaction_id}/category",
         headers=_auth_headers(),
         json={"category": new_category},
         timeout=10,
     )
-
-    if r.ok:
-        return True
-    return False
+    return r.ok
 
 
 def upload_csv_to_backend(uploaded_file):
-
     file_bytes = uploaded_file.getvalue()
 
     files = {
@@ -83,13 +91,12 @@ def upload_csv_to_backend(uploaded_file):
 
 
 def show_dashboard():
-
     st.title("Open Source Finance Analytics")
 
     if "flash_msg" not in st.session_state:
         st.session_state.flash_msg = None
 
-    if "flash_msg":
+    if st.session_state.flash_msg:
         st.success(st.session_state.flash_msg)
         st.session_state.flash_msg = None
 
@@ -98,12 +105,10 @@ def show_dashboard():
     uploaded = st.file_uploader("Choose a CSV file", type=["csv"])
 
     if st.button("Upload selected CSV"):
-
         if uploaded is None:
             st.error("Please choose a file first")
         else:
             ok, msg = upload_csv_to_backend(uploaded)
-
             if ok:
                 st.session_state.flash_msg = msg
                 st.rerun()
@@ -116,7 +121,6 @@ def show_dashboard():
 
     start_date = col1.date_input("Start date", value=None)
     end_date = col2.date_input("End date", value=None)
-
     kind = col3.selectbox("Type", ["all", "income", "expense"])
 
     params = {"kind": kind}
@@ -131,6 +135,7 @@ def show_dashboard():
         f"{API_BASE}/transactions",
         headers=_auth_headers(),
         params=params,
+        timeout=10,
     )
 
     if not r.ok:
@@ -147,9 +152,17 @@ def show_dashboard():
 
     st.subheader("Transactions")
 
-    for _, row in df.iterrows():
+    header_cols = st.columns([2, 4, 3, 3, 3, 3, 3])
+    header_cols[0].write("Date")
+    header_cols[1].write("Details")
+    header_cols[2].write("Category")
+    header_cols[3].write("Flag")
+    header_cols[4].write("Money In")
+    header_cols[5].write("Money Out")
+    header_cols[6].write("Balance")
 
-        cols = st.columns([2, 4, 3, 3, 3, 3])
+    for _, row in df.iterrows():
+        cols = st.columns([2, 4, 3, 3, 3, 3, 3])
 
         date = row["date"]
         details = row["merchant"] or row["description"]
@@ -157,6 +170,8 @@ def show_dashboard():
         amount = float(row["amount"])
         balance = row["balance"]
         txn_id = row["id"]
+        is_anomaly = bool(row.get("is_anomaly", False))
+        anomaly_score = row.get("anomaly_score", None)
 
         money_in = f"€{amount:,.2f}" if amount > 0 else "€0.00"
         money_out = f"€{abs(amount):,.2f}" if amount < 0 else "€0.00"
@@ -173,20 +188,38 @@ def show_dashboard():
         )
 
         if new_category != category:
-
             if update_category(txn_id, new_category):
                 st.session_state.flash_msg = "Category updated"
                 st.rerun()
 
-        cols[3].write(money_in)
-        cols[4].write(money_out)
-        cols[5].write(f"€{float(balance):,.2f}" if balance else "")
+        if is_anomaly:
+            if anomaly_score is not None:
+                cols[3].write(f"⚠ Anomaly ({anomaly_score:.3f})")
+            else:
+                cols[3].write("⚠ Anomaly")
+        else:
+            cols[3].write("Normal")
+
+        cols[4].write(money_in)
+        cols[5].write(money_out)
+        cols[6].write(_safe_balance_text(balance))
+
+    anomaly_count = int(df["is_anomaly"].fillna(False).astype(bool).sum())
+    if anomaly_count > 0:
+        st.warning(
+            f"{anomaly_count} unusual transaction(s) detected in the current view."
+        )
 
     r = requests.get(
         f"{API_BASE}/transactions/summary",
         headers=_auth_headers(),
         params=params,
+        timeout=10,
     )
+
+    if not r.ok:
+        st.error("Failed to load summary")
+        return
 
     summary = r.json()
 
@@ -200,20 +233,19 @@ def show_dashboard():
 
 
 def show_login():
-
     st.title("FYP Finance login")
 
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
 
     if st.button("Log in"):
-
         payload = {"email": email, "password": password}
 
         r = requests.post(
             f"{API_BASE}/login",
             headers={"Content-Type": "application/json"},
             data=json.dumps(payload),
+            timeout=5,
         )
 
         if not r.ok:
@@ -223,11 +255,9 @@ def show_login():
         body = r.json()
 
         if body.get("success"):
-
             st.session_state.authenticated = True
             st.session_state.user_email = email
             st.rerun()
-
         else:
             st.error(body.get("message"))
 
