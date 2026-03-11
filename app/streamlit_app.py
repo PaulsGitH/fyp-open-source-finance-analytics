@@ -52,6 +52,16 @@ def _safe_balance_text(value):
         return ""
 
 
+def _build_display_balance(df: pd.DataFrame) -> pd.Series:
+    if "balance" in df.columns:
+        numeric_balance = pd.to_numeric(df["balance"], errors="coerce")
+        if numeric_balance.notna().any():
+            return numeric_balance
+
+    running = pd.to_numeric(df["amount"], errors="coerce").fillna(0).cumsum()
+    return running
+
+
 def update_category(transaction_id, new_category):
     r = requests.patch(
         f"{API_BASE}/transactions/{transaction_id}/category",
@@ -63,31 +73,40 @@ def update_category(transaction_id, new_category):
 
 
 def upload_csv_to_backend(uploaded_file):
-    file_bytes = uploaded_file.getvalue()
+    try:
+        file_bytes = uploaded_file.getvalue()
 
-    files = {
-        "file": (uploaded_file.name, file_bytes, "text/csv"),
-    }
+        files = {
+            "file": (uploaded_file.name, file_bytes, "text/csv"),
+        }
 
-    r = requests.post(
-        f"{API_BASE}/transactions/upload",
-        files=files,
-        headers=_auth_headers(),
-        timeout=120,
-    )
-
-    if r.ok:
-        body = r.json()
-        inserted = body.get("inserted", 0)
-        skipped = body.get("skipped", 0)
-        categorised = body.get("categorised", 0)
-
-        return (
-            True,
-            f"CSV uploaded successfully. Inserted {inserted}. Skipped {skipped}. Categorised {categorised}.",
+        r = requests.post(
+            f"{API_BASE}/transactions/upload",
+            files=files,
+            headers=_auth_headers(),
+            timeout=120,
         )
 
-    return False, f"Upload failed {r.status_code}"
+        if r.ok:
+            body = r.json()
+            inserted = body.get("inserted", 0)
+            skipped = body.get("skipped", 0)
+            categorised = body.get("categorised", 0)
+
+            return (
+                True,
+                f"CSV uploaded successfully. Inserted {inserted}. Skipped {skipped}. Categorised {categorised}.",
+            )
+
+        return False, f"Upload failed {r.status_code}. {r.text}"
+
+    except requests.exceptions.ReadTimeout:
+        return (
+            False,
+            "Upload timed out while the backend was processing the file. Please try again.",
+        )
+    except Exception as e:
+        return False, f"Upload failed. Details: {e}"
 
 
 def show_dashboard():
@@ -152,6 +171,14 @@ def show_dashboard():
 
     df = pd.DataFrame(rows)
 
+    if "date" in df.columns:
+        df["date_sort"] = pd.to_datetime(df["date"], errors="coerce")
+        df = df.sort_values(by=["date_sort", "id"], ascending=[True, True]).reset_index(
+            drop=True
+        )
+
+    df["display_balance"] = _build_display_balance(df)
+
     st.subheader("Transactions")
 
     header_cols = st.columns([2, 4, 3, 3, 3, 3, 3])
@@ -170,7 +197,7 @@ def show_dashboard():
         details = row["merchant"] or row["description"]
         category = row["category"] or "other"
         amount = float(row["amount"])
-        balance = row["balance"]
+        balance = row["display_balance"]
         txn_id = row["id"]
         is_anomaly = bool(row.get("is_anomaly", False))
         anomaly_score = row.get("anomaly_score", None)
@@ -247,7 +274,6 @@ def show_login():
     password = st.text_input("Password", type="password")
 
     if st.button("Log in"):
-
         if account_type == "Personal":
             email = email or "demo@example.com"
         else:
