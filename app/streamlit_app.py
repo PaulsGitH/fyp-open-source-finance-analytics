@@ -73,7 +73,7 @@ def upload_csv_to_backend(uploaded_file):
         f"{API_BASE}/transactions/upload",
         files=files,
         headers=_auth_headers(),
-        timeout=30,
+        timeout=120,
     )
 
     if r.ok:
@@ -92,6 +92,8 @@ def upload_csv_to_backend(uploaded_file):
 
 def show_dashboard():
     st.title("Open Source Finance Analytics")
+    account_type = st.session_state.get("account_type", "Personal")
+    st.caption(f"Active account: {account_type}")
 
     if "flash_msg" not in st.session_state:
         st.session_state.flash_msg = None
@@ -235,10 +237,22 @@ def show_dashboard():
 def show_login():
     st.title("FYP Finance login")
 
+    account_type = st.radio(
+        "Account type",
+        ["Personal", "Business"],
+        horizontal=True,
+    )
+
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
 
     if st.button("Log in"):
+
+        if account_type == "Personal":
+            email = email or "demo@example.com"
+        else:
+            email = email or "business@example.com"
+
         payload = {"email": email, "password": password}
 
         r = requests.post(
@@ -257,6 +271,7 @@ def show_login():
         if body.get("success"):
             st.session_state.authenticated = True
             st.session_state.user_email = email
+            st.session_state.account_type = account_type
             st.rerun()
         else:
             st.error(body.get("message"))
