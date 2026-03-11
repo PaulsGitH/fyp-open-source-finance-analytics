@@ -474,3 +474,19 @@ def delete_transaction(
     db.commit()
 
     return {"deleted": transaction_id}
+
+
+@app.delete("/transactions")
+def delete_all_transactions(
+    db: Session = Depends(get_db), user=Depends(get_current_user)
+):
+
+    deleted = (
+        db.query(models.Transaction)
+        .filter(models.Transaction.user_id == user.id)
+        .delete()
+    )
+
+    db.commit()
+
+    return {"deleted": deleted}

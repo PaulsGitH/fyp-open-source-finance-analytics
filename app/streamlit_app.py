@@ -137,6 +137,19 @@ def show_dashboard():
             else:
                 st.error(msg)
 
+    if st.button("Delete all transactions for this account"):
+        r = requests.delete(
+            f"{API_BASE}/transactions",
+            headers=_auth_headers(),
+            timeout=10,
+        )
+
+        if r.ok:
+            st.session_state.flash_msg = "All transactions deleted"
+            st.rerun()
+        else:
+            st.error("Failed to delete transactions")
+
     st.subheader("Filters")
 
     col1, col2, col3 = st.columns(3)
