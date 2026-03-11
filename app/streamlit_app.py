@@ -111,9 +111,19 @@ def upload_csv_to_backend(uploaded_file):
 
 
 def show_dashboard():
-    st.title("Open Source Finance Analytics")
-    account_type = st.session_state.get("account_type", "Personal")
-    st.caption(f"Active account: {account_type}")
+    header_col1, header_col2 = st.columns([6, 1])
+
+    with header_col1:
+        st.title("Open Source Finance Analytics")
+        account_type = st.session_state.get("account_type", "Personal")
+        st.caption(f"Active account: {account_type}")
+
+    with header_col2:
+        if st.button("Logout"):
+            st.session_state.authenticated = False
+            st.session_state.user_email = None
+            st.session_state.account_type = None
+            st.rerun()
 
     if "flash_msg" not in st.session_state:
         st.session_state.flash_msg = None
