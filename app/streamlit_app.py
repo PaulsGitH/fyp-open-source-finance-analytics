@@ -185,7 +185,7 @@ def show_dashboard():
 
     st.subheader("Transactions")
 
-    header_cols = st.columns([2, 4, 3, 3, 3, 3, 3])
+    header_cols = st.columns([2, 4, 3, 3, 3, 3, 3, 1])
     header_cols[0].write("Date")
     header_cols[1].write("Details")
     header_cols[2].write("Category")
@@ -193,9 +193,10 @@ def show_dashboard():
     header_cols[4].write("Money In")
     header_cols[5].write("Money Out")
     header_cols[6].write("Balance")
+    header_cols[7].write("Delete")
 
     for _, row in df.iterrows():
-        cols = st.columns([2, 4, 3, 3, 3, 3, 3])
+        cols = st.columns([2, 4, 3, 3, 3, 3, 3, 1])
 
         date = row["date"]
         details = row["merchant"] or row["description"]
@@ -236,6 +237,19 @@ def show_dashboard():
         cols[4].write(money_in)
         cols[5].write(money_out)
         cols[6].write(_safe_balance_text(balance))
+
+        if cols[7].button("X", key=f"del_{txn_id}"):
+            r = requests.delete(
+                f"{API_BASE}/transactions/{txn_id}",
+                headers=_auth_headers(),
+                timeout=10,
+            )
+
+            if r.ok:
+                st.session_state.flash_msg = "Transaction deleted"
+                st.rerun()
+            else:
+                st.error("Delete failed")
 
     anomaly_count = int(df["is_anomaly_bool"].sum())
     if anomaly_count > 0:

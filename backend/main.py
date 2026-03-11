@@ -12,6 +12,7 @@ from .db import SessionLocal
 from . import models, schemas, auth
 from .categoriser import categoriser
 from .anomaly import score_transactions
+from fastapi import HTTPException
 
 
 app = FastAPI(
@@ -447,3 +448,29 @@ def login(credentials: schemas.LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     return schemas.LoginResponse(success=True, message="Login successful")
+
+
+from fastapi import HTTPException
+
+
+@app.delete("/transactions/{transaction_id}")
+def delete_transaction(
+    transaction_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)
+):
+
+    txn = (
+        db.query(models.Transaction)
+        .filter(
+            models.Transaction.id == transaction_id,
+            models.Transaction.user_id == user.id,
+        )
+        .first()
+    )
+
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    db.delete(txn)
+    db.commit()
+
+    return {"deleted": transaction_id}
