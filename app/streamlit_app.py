@@ -1,6 +1,7 @@
 import os
 import json
 import math
+import matplotlib.pyplot as plt
 
 import pandas as pd
 import requests
@@ -178,6 +179,9 @@ def show_dashboard():
         )
 
     df["display_balance"] = _build_display_balance(df)
+    df["amount_num"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
+    df["category_clean"] = df["category"].fillna("other").replace("", "other")
+    df["is_anomaly_bool"] = df["is_anomaly"].fillna(False).astype(bool)
 
     st.subheader("Transactions")
 
@@ -233,7 +237,7 @@ def show_dashboard():
         cols[5].write(money_out)
         cols[6].write(_safe_balance_text(balance))
 
-    anomaly_count = int(df["is_anomaly"].fillna(False).astype(bool).sum())
+    anomaly_count = int(df["is_anomaly_bool"].sum())
     if anomaly_count > 0:
         st.warning(
             f"{anomaly_count} unusual transaction(s) detected in the current view."
@@ -259,6 +263,103 @@ def show_dashboard():
     col1.metric("Money in", f"€{summary['income']:,.2f}")
     col2.metric("Money out", f"€{summary['expenses']:,.2f}")
     col3.metric("Net change", f"€{summary['net']:,.2f}")
+
+    st.subheader("Analytics")
+
+    analytics_col1, analytics_col2 = st.columns([2, 1])
+
+    with analytics_col1:
+        cashflow_df = pd.DataFrame(
+            {
+                "Metric": ["Money In", "Money Out"],
+                "Amount": [summary["income"], summary["expenses"]],
+            }
+        )
+        st.caption("Money In vs Money Out")
+        st.bar_chart(cashflow_df.set_index("Metric"))
+
+    with analytics_col2:
+        st.metric("Flagged transactions", anomaly_count)
+        st.metric("Transactions in view", len(df))
+
+    expense_df = df[df["amount_num"] < 0].copy()
+    expense_df["expense_abs"] = expense_df["amount_num"].abs()
+
+    if not expense_df.empty:
+        category_spend = (
+            expense_df.groupby("category_clean", dropna=False)["expense_abs"]
+            .sum()
+            .sort_values(ascending=False)
+        )
+        st.caption("Spending by Category")
+        st.bar_chart(category_spend)
+
+    monthly_df = df.copy()
+    monthly_df["month"] = monthly_df["date_sort"].dt.to_period("M").astype(str)
+    monthly_net = (
+        monthly_df.groupby("month", dropna=False)["amount_num"].sum().sort_index()
+    )
+
+    if not monthly_net.empty:
+        st.caption("Monthly Net Movement")
+        st.line_chart(monthly_net)
+
+        if not expense_df.empty:
+            top_expenses = (
+                expense_df.sort_values(by="expense_abs", ascending=False)[
+                    ["description", "expense_abs"]
+                ]
+                .head(5)
+                .copy()
+            )
+
+            st.caption("Top 5 Expenses")
+
+            chart_col, legend_col = st.columns([3, 2])
+
+            with chart_col:
+                fig, ax = plt.subplots(figsize=(6, 6))
+
+                def autopct_if_large(pct):
+                    return f"{pct:.1f}%" if pct >= 5 else ""
+
+                ax.pie(
+                    top_expenses["expense_abs"],
+                    labels=None,
+                    autopct=autopct_if_large,
+                    startangle=90,
+                    pctdistance=0.65,
+                )
+
+                ax.axis("equal")
+                st.pyplot(fig)
+
+            with legend_col:
+                legend_labels = [
+                    f"{desc} - €{amt:,.2f}"
+                    for desc, amt in zip(
+                        top_expenses["description"],
+                        top_expenses["expense_abs"],
+                    )
+                ]
+
+                st.markdown("Expense breakdown")
+
+                for i, label in enumerate(legend_labels, start=1):
+                    st.write(f"{i}. {label}")
+
+            breakdown_df = top_expenses.rename(
+                columns={
+                    "description": "Description",
+                    "expense_abs": "Amount",
+                }
+            ).copy()
+
+            breakdown_df["Amount"] = breakdown_df["Amount"].apply(
+                lambda x: f"€{x:,.2f}"
+            )
+
+            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
 
 
 def show_login():
