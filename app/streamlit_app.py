@@ -331,10 +331,7 @@ def show_dashboard():
                 st.rerun()
 
         if is_anomaly:
-            if anomaly_score is not None:
-                cols[3].write(f"⚠ Anomaly ({anomaly_score:.3f})")
-            else:
-                cols[3].write("⚠ Anomaly")
+            cols[3].write("⚠ Anomaly")
         else:
             cols[3].write("Normal")
 

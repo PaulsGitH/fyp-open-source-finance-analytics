@@ -58,11 +58,8 @@ def score_transactions(rows: list[Any]) -> list[AnomalyResult]:
         "chargeback",
         "collectible",
         "tokyo",
-        "bonus",
         "cash",
         "transfer",
-        "investment",
-        "ring",
         "legal settlement",
         "gaming",
         "microtransactions",
@@ -79,40 +76,55 @@ def score_transactions(rows: list[Any]) -> list[AnomalyResult]:
         amount = abs(float(_read_value(row, "amount", 0.0) or 0.0))
 
         combined_text = f"{merchant} {description}".strip()
-
         keyword_hits = sum(
             1 for keyword in suspicious_keywords if keyword in combined_text
         )
 
         score = 0.0
 
+        if amount < 10:
+            results.append(
+                AnomalyResult(
+                    transaction_id=transaction_id,
+                    anomaly_score=0.0,
+                    is_anomaly=False,
+                )
+            )
+            continue
+
+        if amount >= 10:
+            score += 0.0
+        if amount >= 100:
+            score += 0.2
+        if amount >= 500:
+            score += 0.5
         if amount >= 1000:
             score += 1.0
         if amount >= 3000:
-            score += 1.0
+            score += 1.5
         if amount >= 7000:
             score += 2.0
         if amount >= 15000:
-            score += 2.0
+            score += 2.5
         if amount >= 50000:
             score += 3.0
 
         if keyword_hits > 0:
-            score += 2.0 + (0.5 * max(0, keyword_hits - 1))
+            score += 1.5 + (0.4 * max(0, keyword_hits - 1))
 
-        repeated_cash_like = (
+        cash_like = (
             "atm" in combined_text
             or "withdrawal" in combined_text
             or "cash" in combined_text
             or "wire" in combined_text
             or "crypto" in combined_text
         )
-        if repeated_cash_like and amount >= 1000:
-            score += 1.5
+        if cash_like and amount >= 100:
+            score += 1.0
 
-        high_risk_combo = amount >= 3000 and keyword_hits > 0
+        high_risk_combo = amount >= 1000 and keyword_hits > 0
         if high_risk_combo:
-            score += 2.0
+            score += 1.5
 
         is_anomaly = score >= 2.0
 
