@@ -397,17 +397,39 @@ def show_dashboard():
         st.metric("Flagged transactions", anomaly_count)
         st.metric("Transactions in view", len(df))
 
-    expense_df = df[df["amount_num"] < 0].copy()
+        expense_df = df[df["amount_num"] < 0].copy()
     expense_df["expense_abs"] = expense_df["amount_num"].abs()
 
-    if not expense_df.empty:
-        category_spend = (
-            expense_df.groupby("category_clean", dropna=False)["expense_abs"]
-            .sum()
-            .sort_values(ascending=False)
-        )
-        st.caption("Spending by Category")
-        st.bar_chart(category_spend)
+    income_df = df[df["amount_num"] > 0].copy()
+    income_df["income_val"] = income_df["amount_num"]
+
+    chart_col1, chart_col2 = st.columns(2)
+
+    with chart_col1:
+        if not expense_df.empty:
+            category_spend = (
+                expense_df.groupby("category_clean", dropna=False)["expense_abs"]
+                .sum()
+                .sort_values(ascending=False)
+            )
+            st.caption("Expense by Category")
+            st.bar_chart(category_spend)
+        else:
+            st.caption("Expense by Category")
+            st.info("No expense transactions in the current view.")
+
+    with chart_col2:
+        if not income_df.empty:
+            category_income = (
+                income_df.groupby("category_clean", dropna=False)["income_val"]
+                .sum()
+                .sort_values(ascending=False)
+            )
+            st.caption("Income by Category")
+            st.bar_chart(category_income)
+        else:
+            st.caption("Income by Category")
+            st.info("No income transactions in the current view.")
 
     monthly_df = df.copy()
     monthly_df["month"] = monthly_df["date_sort"].dt.to_period("M").astype(str)
