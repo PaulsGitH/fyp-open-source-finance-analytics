@@ -144,6 +144,51 @@ def _build_display_balance(df: pd.DataFrame) -> pd.Series:
     return running
 
 
+def _cost_type_for_category(category: str) -> str:
+    fixed_categories = {
+        "housing",
+        "rent",
+        "mortgage",
+        "utilities",
+        "electricity",
+        "gas",
+        "water",
+        "internet",
+        "phone",
+        "insurance",
+        "insurance business",
+        "subscriptions",
+        "software subscriptions",
+        "saas tools",
+        "cloud infrastructure",
+        "hosting",
+        "domains",
+        "office rent",
+        "coworking",
+        "payroll",
+        "employee benefits",
+        "tax payments",
+        "vat",
+        "corporation tax",
+        "accounting fees",
+        "legal fees",
+        "bank fees",
+        "payment processor fees",
+        "licensing",
+        "compliance",
+        "maintenance",
+        "professional services",
+        "merchant services",
+        "office supplies",
+        "software",
+        "training",
+        "research and development",
+    }
+
+    category_clean = str(category or "").strip().lower()
+    return "Fixed" if category_clean in fixed_categories else "Variable"
+
+
 def update_category(transaction_id, new_category):
     r = requests.patch(
         f"{API_BASE}/transactions/{transaction_id}/category",
@@ -166,7 +211,7 @@ def upload_csv_to_backend(uploaded_file):
             f"{API_BASE}/transactions/upload",
             files=files,
             headers=_auth_headers(),
-            timeout=120,
+            timeout=320,
         )
 
         if r.ok:
@@ -390,15 +435,30 @@ def show_dashboard():
                 "Amount": [summary["income"], summary["expenses"]],
             }
         )
-        st.caption("Money In vs Money Out")
-        st.bar_chart(cashflow_df.set_index("Metric"))
+
+    st.caption("Money In vs Money Out")
+
+    fig, ax = plt.subplots()
+
+    colors = ["green", "red"]
+
+    ax.bar(cashflow_df["Metric"], cashflow_df["Amount"], color=colors)
+    ax.set_ylabel("Amount (€)")
+    ax.set_xlabel("")
+
+    st.pyplot(fig)
 
     with analytics_col2:
         st.metric("Flagged transactions", anomaly_count)
         st.metric("Transactions in view", len(df))
 
-        expense_df = df[df["amount_num"] < 0].copy()
+    expense_df = df[df["amount_num"] < 0].copy()
     expense_df["expense_abs"] = expense_df["amount_num"].abs()
+
+    if not expense_df.empty:
+        expense_df["cost_type"] = expense_df["category_clean"].apply(
+            _cost_type_for_category
+        )
 
     income_df = df[df["amount_num"] > 0].copy()
     income_df["income_val"] = income_df["amount_num"]
@@ -413,7 +473,15 @@ def show_dashboard():
                 .sort_values(ascending=False)
             )
             st.caption("Expense by Category")
-            st.bar_chart(category_spend)
+
+            fig, ax = plt.subplots()
+            colors = plt.cm.tab20.colors[: len(category_spend)]
+
+            ax.bar(category_spend.index, category_spend.values, color=colors)
+            ax.set_ylabel("Amount (€)")
+            ax.tick_params(axis="x", rotation=45)
+
+            st.pyplot(fig)
         else:
             st.caption("Expense by Category")
             st.info("No expense transactions in the current view.")
@@ -426,7 +494,15 @@ def show_dashboard():
                 .sort_values(ascending=False)
             )
             st.caption("Income by Category")
-            st.bar_chart(category_income)
+
+            fig, ax = plt.subplots()
+            colors = plt.cm.Set2.colors[: len(category_income)]
+
+            ax.bar(category_income.index, category_income.values, color=colors)
+            ax.set_ylabel("Amount (€)")
+            ax.tick_params(axis="x", rotation=45)
+
+            st.pyplot(fig)
         else:
             st.caption("Income by Category")
             st.info("No income transactions in the current view.")
@@ -436,6 +512,83 @@ def show_dashboard():
     monthly_net = (
         monthly_df.groupby("month", dropna=False)["amount_num"].sum().sort_index()
     )
+
+    if not expense_df.empty:
+        fixed_variable = (
+            expense_df.groupby("cost_type", dropna=False)["expense_abs"]
+            .sum()
+            .reindex(["Fixed", "Variable"], fill_value=0.0)
+        )
+
+        st.caption("Fixed vs Variable Costs")
+
+        fv_col1, fv_col2, fv_col3 = st.columns([2, 1, 1])
+
+        with fv_col1:
+            fig, ax = plt.subplots()
+
+            labels = ["Fixed", "Variable"]
+            values = [fixed_variable["Fixed"], fixed_variable["Variable"]]
+            colors = ["blue", "orange"]
+
+            ax.bar(labels, values, color=colors)
+            ax.set_ylabel("Amount (€)")
+
+            st.pyplot(fig)
+
+        with fv_col2:
+            st.metric("Fixed costs", f"€{fixed_variable['Fixed']:,.2f}")
+
+        with fv_col3:
+            st.metric("Variable costs", f"€{fixed_variable['Variable']:,.2f}")
+
+        fixed_breakdown = (
+            expense_df[expense_df["cost_type"] == "Fixed"]
+            .groupby("category_clean", dropna=False)["expense_abs"]
+            .sum()
+            .sort_values(ascending=False)
+            .reset_index()
+        )
+
+        variable_breakdown = (
+            expense_df[expense_df["cost_type"] == "Variable"]
+            .groupby("category_clean", dropna=False)["expense_abs"]
+            .sum()
+            .sort_values(ascending=False)
+            .reset_index()
+        )
+
+        breakdown_col1, breakdown_col2 = st.columns(2)
+
+        with breakdown_col1:
+            st.caption("Fixed cost breakdown")
+            if not fixed_breakdown.empty:
+                fixed_breakdown.columns = ["Category", "Amount"]
+                fixed_breakdown["Amount"] = fixed_breakdown["Amount"].apply(
+                    lambda x: f"€{x:,.2f}"
+                )
+                st.dataframe(
+                    fixed_breakdown,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.info("No fixed costs in the current view.")
+
+        with breakdown_col2:
+            st.caption("Variable cost breakdown")
+            if not variable_breakdown.empty:
+                variable_breakdown.columns = ["Category", "Amount"]
+                variable_breakdown["Amount"] = variable_breakdown["Amount"].apply(
+                    lambda x: f"€{x:,.2f}"
+                )
+                st.dataframe(
+                    variable_breakdown,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.info("No variable costs in the current view.")
 
     if not monthly_net.empty:
         st.caption("Monthly Net Movement")
