@@ -324,6 +324,36 @@ class TransactionCategoriser:
         cleaned = str(value).strip().lower()
         return cleaned or None
 
+    def _normalise_output_category(self, category: str) -> str:
+        category = str(category).strip().lower()
+
+        # collapse utility style categories
+        if category in {"electricity", "gas", "water", "internet", "phone"}:
+            return "utilities"
+
+        # collapse personal income noise
+        if category in {
+            "bonus",
+            "refund",
+            "interest",
+            "dividend",
+            "investment return",
+        }:
+            return "other"
+
+        # collapse business income into revenue
+        if category in {
+            "sales revenue",
+            "client payments",
+            "contract income",
+            "grant income",
+            "loan received",
+            "capital injection",
+        }:
+            return "sales revenue"
+
+        return category
+
     def categorise(
         self,
         description: Optional[str],
@@ -337,11 +367,11 @@ class TransactionCategoriser:
 
         rule_match = self._match_rules(merchant_text, description_text)
         if rule_match is not None:
-            return rule_match
+            return self._normalise_output_category(rule_match)
 
         hf_match = self._classify_with_huggingface(merchant_text, description_text)
         if hf_match is not None:
-            return hf_match
+            return self._normalise_output_category(hf_match)
 
         return "other"
 
