@@ -236,6 +236,17 @@ def upload_csv_to_backend(uploaded_file):
         return False, f"Upload failed. Details: {e}"
 
 
+def _style_dark_chart(ax):
+    ax.set_facecolor("#0f1117")
+    ax.figure.set_facecolor("#0f1117")
+    ax.tick_params(colors="white")
+    ax.xaxis.label.set_color("white")
+    ax.yaxis.label.set_color("white")
+
+    for spine in ax.spines.values():
+        spine.set_color("white")
+
+
 def show_dashboard():
     header_col1, header_col2 = st.columns([6, 1])
 
@@ -416,17 +427,43 @@ def show_dashboard():
 
     summary = r.json()
 
-    st.subheader("Summary")
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("Money in", f"€{summary['income']:,.2f}")
-    col2.metric("Money out", f"€{summary['expenses']:,.2f}")
-    col3.metric("Net change", f"€{summary['net']:,.2f}")
-
     st.subheader("Analytics")
 
-    analytics_col1, analytics_col2 = st.columns([2, 1])
+    expense_df = df[df["amount_num"] < 0].copy()
+    expense_df["expense_abs"] = expense_df["amount_num"].abs()
+
+    if not expense_df.empty:
+        expense_df["cost_type"] = expense_df["category_clean"].apply(
+            _cost_type_for_category
+        )
+        category_spend = (
+            expense_df.groupby("category_clean", dropna=False)["expense_abs"]
+            .sum()
+            .sort_values(ascending=False)
+        )
+    else:
+        category_spend = pd.Series(dtype=float)
+
+    income_df = df[df["amount_num"] > 0].copy()
+    income_df["income_val"] = income_df["amount_num"]
+
+    if not category_spend.empty:
+        st.caption("Expense by Category")
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+        colors = plt.cm.tab20.colors[: len(category_spend)]
+
+        ax.bar(category_spend.index, category_spend.values, color=colors)
+        ax.set_ylabel("Amount (€)")
+        ax.tick_params(axis="x", rotation=45)
+
+        _style_dark_chart(ax)
+        st.pyplot(fig)
+    else:
+        st.caption("Expense by Category")
+        st.info("No expense transactions in the current view.")
+
+    analytics_col1, analytics_col2 = st.columns(2)
 
     with analytics_col1:
         cashflow_df = pd.DataFrame(
@@ -436,57 +473,19 @@ def show_dashboard():
             }
         )
 
-    st.caption("Money In vs Money Out")
+        st.caption("Money In vs Money Out")
 
-    fig, ax = plt.subplots()
+        fig, ax = plt.subplots()
+        colors = ["green", "red"]
 
-    colors = ["green", "red"]
+        ax.bar(cashflow_df["Metric"], cashflow_df["Amount"], color=colors)
+        ax.set_ylabel("Amount (€)")
+        ax.set_xlabel("")
 
-    ax.bar(cashflow_df["Metric"], cashflow_df["Amount"], color=colors)
-    ax.set_ylabel("Amount (€)")
-    ax.set_xlabel("")
-
-    st.pyplot(fig)
+        _style_dark_chart(ax)
+        st.pyplot(fig)
 
     with analytics_col2:
-        st.metric("Flagged transactions", anomaly_count)
-        st.metric("Transactions in view", len(df))
-
-    expense_df = df[df["amount_num"] < 0].copy()
-    expense_df["expense_abs"] = expense_df["amount_num"].abs()
-
-    if not expense_df.empty:
-        expense_df["cost_type"] = expense_df["category_clean"].apply(
-            _cost_type_for_category
-        )
-
-    income_df = df[df["amount_num"] > 0].copy()
-    income_df["income_val"] = income_df["amount_num"]
-
-    chart_col1, chart_col2 = st.columns(2)
-
-    with chart_col1:
-        if not expense_df.empty:
-            category_spend = (
-                expense_df.groupby("category_clean", dropna=False)["expense_abs"]
-                .sum()
-                .sort_values(ascending=False)
-            )
-            st.caption("Expense by Category")
-
-            fig, ax = plt.subplots()
-            colors = plt.cm.tab20.colors[: len(category_spend)]
-
-            ax.bar(category_spend.index, category_spend.values, color=colors)
-            ax.set_ylabel("Amount (€)")
-            ax.tick_params(axis="x", rotation=45)
-
-            st.pyplot(fig)
-        else:
-            st.caption("Expense by Category")
-            st.info("No expense transactions in the current view.")
-
-    with chart_col2:
         if not income_df.empty:
             category_income = (
                 income_df.groupby("category_clean", dropna=False)["income_val"]
@@ -502,16 +501,11 @@ def show_dashboard():
             ax.set_ylabel("Amount (€)")
             ax.tick_params(axis="x", rotation=45)
 
+            _style_dark_chart(ax)
             st.pyplot(fig)
         else:
             st.caption("Income by Category")
             st.info("No income transactions in the current view.")
-
-    monthly_df = df.copy()
-    monthly_df["month"] = monthly_df["date_sort"].dt.to_period("M").astype(str)
-    monthly_net = (
-        monthly_df.groupby("month", dropna=False)["amount_num"].sum().sort_index()
-    )
 
     if not expense_df.empty:
         fixed_variable = (
@@ -533,6 +527,8 @@ def show_dashboard():
 
             ax.bar(labels, values, color=colors)
             ax.set_ylabel("Amount (€)")
+
+            _style_dark_chart(ax)
 
             st.pyplot(fig)
 
@@ -590,10 +586,6 @@ def show_dashboard():
             else:
                 st.info("No variable costs in the current view.")
 
-    if not monthly_net.empty:
-        st.caption("Monthly Net Movement")
-        st.line_chart(monthly_net)
-
         if not expense_df.empty:
             top_expenses = (
                 expense_df.sort_values(by="expense_abs", ascending=False)[
@@ -621,6 +613,7 @@ def show_dashboard():
                     pctdistance=0.65,
                 )
 
+                _style_dark_chart(ax)
                 ax.axis("equal")
                 st.pyplot(fig)
 
