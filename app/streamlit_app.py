@@ -427,6 +427,37 @@ def show_dashboard():
 
     st.subheader("Analytics")
 
+    account_type = st.session_state.get("account_type", "Personal")
+
+    if account_type == "Business":
+
+        st.caption("Net Cash Flow Trend (Last 6 Months)")
+
+        df_month = df.copy()
+
+        df_month["date_sort"] = pd.to_datetime(df_month["date"], errors="coerce")
+        df_month["month"] = df_month["date_sort"].dt.to_period("M").dt.to_timestamp()
+
+        monthly = df_month.groupby("month")["amount_num"].sum().tail(6)
+
+        if not monthly.empty:
+
+            fig, ax = plt.subplots(figsize=(10, 5))
+
+            ax.plot(monthly.index, monthly.values, marker="o", linewidth=2)
+
+            ax.set_ylabel("Net Cash Flow (€)")
+            ax.set_xlabel("Month")
+
+            ax.axhline(0, linestyle="--", linewidth=1)
+
+            _style_dark_chart(ax)
+
+            st.pyplot(fig)
+
+        else:
+            st.info("Not enough transaction data for trend analysis.")
+
     expense_df = df[df["amount_num"] < 0].copy()
     expense_df["expense_abs"] = expense_df["amount_num"].abs()
 
