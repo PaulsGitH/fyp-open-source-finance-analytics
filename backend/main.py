@@ -94,6 +94,7 @@ def list_transactions(
     start_date: Optional[date] = Query(default=None),
     end_date: Optional[date] = Query(default=None),
     kind: str = Query(default="all", pattern="^(all|income|expense)$"),
+    category: Optional[str] = Query(default=None),
 ):
     if start_date and end_date and start_date > end_date:
         raise HTTPException(status_code=400, detail="start_date must be <= end_date")
@@ -111,6 +112,9 @@ def list_transactions(
         q = q.filter(models.Transaction.amount > 0)
     elif kind == "expense":
         q = q.filter(models.Transaction.amount < 0)
+
+    if category and category.lower() != "all":
+        q = q.filter(func.lower(models.Transaction.category) == category.lower())
 
     rows = q.order_by(models.Transaction.date).all()
     anomaly_results = score_transactions(rows)
@@ -146,6 +150,7 @@ def transactions_summary(
     start_date: Optional[date] = Query(default=None),
     end_date: Optional[date] = Query(default=None),
     kind: str = Query(default="all", pattern="^(all|income|expense)$"),
+    category: Optional[str] = Query(default=None),
 ):
     if start_date and end_date and start_date > end_date:
         raise HTTPException(status_code=400, detail="start_date must be <= end_date")
@@ -163,6 +168,9 @@ def transactions_summary(
         q = q.filter(models.Transaction.amount > 0)
     elif kind == "expense":
         q = q.filter(models.Transaction.amount < 0)
+
+    if category and category.lower() != "all":
+        q = q.filter(func.lower(models.Transaction.category) == category.lower())
 
     income_expr = func.coalesce(
         func.sum(

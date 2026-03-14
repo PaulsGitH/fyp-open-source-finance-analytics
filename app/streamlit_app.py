@@ -296,13 +296,14 @@ def show_dashboard():
 
     st.subheader("Filters")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     start_date = col1.date_input("Start date", value=None)
     end_date = col2.date_input("End date", value=None)
     kind = col3.selectbox("Type", ["all", "income", "expense"])
+    category_filter = col4.selectbox("Category", ["all"] + CATEGORIES)
 
-    params = {"kind": kind}
+    params = {"kind": kind, "category": category_filter}
 
     if start_date:
         params["start_date"] = start_date.isoformat()
