@@ -458,6 +458,39 @@ def show_dashboard():
         else:
             st.info("Not enough transaction data for trend analysis.")
 
+        st.caption("Monthly Revenue Trend (Last 6 Months)")
+
+        revenue_df = df[df["amount_num"] > 0].copy()
+
+        revenue_df["date_sort"] = pd.to_datetime(revenue_df["date"], errors="coerce")
+        revenue_df["month"] = (
+            revenue_df["date_sort"].dt.to_period("M").dt.to_timestamp()
+        )
+
+        monthly_revenue = revenue_df.groupby("month")["amount_num"].sum().tail(6)
+
+        if not monthly_revenue.empty:
+
+            fig, ax = plt.subplots(figsize=(10, 5))
+
+            ax.plot(
+                monthly_revenue.index,
+                monthly_revenue.values,
+                marker="o",
+                linewidth=2,
+                color="green",
+            )
+
+            ax.set_ylabel("Revenue (€)")
+            ax.set_xlabel("Month")
+
+            _style_dark_chart(ax)
+
+            st.pyplot(fig)
+
+        else:
+            st.info("Not enough revenue data for trend analysis.")
+
     expense_df = df[df["amount_num"] < 0].copy()
     expense_df["expense_abs"] = expense_df["amount_num"].abs()
 
