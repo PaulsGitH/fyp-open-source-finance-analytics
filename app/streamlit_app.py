@@ -628,19 +628,6 @@ def show_dashboard():
                 for i, label in enumerate(legend_labels, start=1):
                     st.write(f"{i}. {label}")
 
-            breakdown_df = top_expenses.rename(
-                columns={
-                    "description": "Description",
-                    "expense_abs": "Amount",
-                }
-            ).copy()
-
-            breakdown_df["Amount"] = breakdown_df["Amount"].apply(
-                lambda x: f"€{x:,.2f}"
-            )
-
-            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
-
 
 def show_login():
     st.title("FYP Finance login")
