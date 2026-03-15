@@ -5,17 +5,13 @@ from typing import List, Optional
 import io
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Query, Header
-from sqlalchemy.orm import Session
 from sqlalchemy import func, case
+from sqlalchemy.orm import Session
 
-from .db import SessionLocal
-from . import models, schemas, auth
+from . import auth, models, schemas
+from .anomaly import score_transactions
 from .categoriser import categoriser
-from fastapi import HTTPException
-
-from backend import db
-
-from backend import anomaly
+from .db import SessionLocal
 
 
 app = FastAPI(
@@ -281,7 +277,7 @@ def list_transaction_anomalies(
     elif kind == "expense":
         q = q.filter(models.Transaction.amount < 0)
 
-        rows = q.order_by(models.Transaction.date).all()
+    rows = q.order_by(models.Transaction.date).all()
 
     result = []
     for row in rows:
@@ -434,15 +430,15 @@ def upload_transactions_csv(
         except Exception as e:
             errors.append({"row": int(i), "error": str(e)})
 
-    if transactions_to_score:
-        anomaly_results = score_transactions(transactions_to_score)
-        anomaly_map = {item.transaction_id: item for item in anomaly_results}
+        if transactions_to_score:
+            anomaly_results = score_transactions(transactions_to_score)
+            anomaly_map = {item.transaction_id: item for item in anomaly_results}
 
-        for txn in transactions_to_score:
-            anomaly = anomaly_map.get(txn.transaction_id)
-            if anomaly:
-                txn.anomaly_score = anomaly.anomaly_score
-                txn.is_anomaly = anomaly.is_anomaly
+            for txn in transactions_to_score:
+                anomaly = anomaly_map.get(txn.id)
+                if anomaly:
+                    txn.anomaly_score = anomaly.anomaly_score
+                    txn.is_anomaly = anomaly.is_anomaly
 
     db.commit()
     return schemas.UploadResponse(
@@ -502,9 +498,6 @@ def login(credentials: schemas.LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     return schemas.LoginResponse(success=True, message="Login successful")
-
-
-from fastapi import HTTPException
 
 
 @app.delete("/transactions/{transaction_id}")
