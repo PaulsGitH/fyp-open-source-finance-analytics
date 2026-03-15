@@ -11,7 +11,6 @@ from sqlalchemy import func, case
 from .db import SessionLocal
 from . import models, schemas, auth
 from .categoriser import categoriser
-from .anomaly import score_transactions
 from fastapi import HTTPException
 
 from backend import db
@@ -121,12 +120,9 @@ def list_transactions(
         q = q.filter(func.lower(models.Transaction.category) == category.lower())
 
     rows = q.order_by(models.Transaction.date).all()
-    anomaly_results = score_transactions(rows)
-    anomaly_map = {item.transaction_id: item for item in anomaly_results}
 
     result = []
     for row in rows:
-        anomaly = anomaly_map.get(getattr(row, "id", None))
         result.append(
             schemas.TransactionOut(
                 id=getattr(row, "id", None),
@@ -138,8 +134,12 @@ def list_transactions(
                 amount=float(row.amount) if row.amount is not None else 0.0,
                 balance=float(row.balance) if row.balance is not None else None,
                 currency=getattr(row, "currency", None),
-                anomaly_score=anomaly.anomaly_score if anomaly else 0.0,
-                is_anomaly=anomaly.is_anomaly if anomaly else False,
+                anomaly_score=(
+                    float(row.anomaly_score) if row.anomaly_score is not None else 0.0
+                ),
+                is_anomaly=(
+                    bool(row.is_anomaly) if row.is_anomaly is not None else False
+                ),
                 user_id=getattr(row, "user_id", None),
             )
         )
@@ -281,13 +281,10 @@ def list_transaction_anomalies(
     elif kind == "expense":
         q = q.filter(models.Transaction.amount < 0)
 
-    rows = q.order_by(models.Transaction.date).all()
-    anomaly_results = score_transactions(rows)
-    anomaly_map = {item.transaction_id: item for item in anomaly_results}
+        rows = q.order_by(models.Transaction.date).all()
 
     result = []
     for row in rows:
-        anomaly = anomaly_map.get(getattr(row, "id", None))
         result.append(
             schemas.TransactionAnomalyOut(
                 id=getattr(row, "id", None),
@@ -296,8 +293,12 @@ def list_transaction_anomalies(
                 merchant=getattr(row, "merchant", None),
                 category=getattr(row, "category", None),
                 amount=float(row.amount) if row.amount is not None else 0.0,
-                anomaly_score=anomaly.anomaly_score if anomaly else 0.0,
-                is_anomaly=anomaly.is_anomaly if anomaly else False,
+                anomaly_score=(
+                    float(row.anomaly_score) if row.anomaly_score is not None else 0.0
+                ),
+                is_anomaly=(
+                    bool(row.is_anomaly) if row.is_anomaly is not None else False
+                ),
             )
         )
 
