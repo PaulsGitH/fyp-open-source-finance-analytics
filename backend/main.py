@@ -14,6 +14,10 @@ from .categoriser import categoriser
 from .anomaly import score_transactions
 from fastapi import HTTPException
 
+from backend import db
+
+from backend import anomaly
+
 
 app = FastAPI(
     title="FYP Finance API",
@@ -416,6 +420,15 @@ def upload_transactions_csv(
             )
 
             db.add(txn)
+            db.flush()
+
+            anomaly_results = score_transactions([txn])
+            anomaly = anomaly_results[0] if anomaly_results else None
+
+            if anomaly:
+                txn.anomaly_score = anomaly.anomaly_score
+                txn.is_anomaly = anomaly.is_anomaly
+
             inserted += 1
 
             if txn_id:
