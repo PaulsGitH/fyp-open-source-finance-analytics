@@ -354,6 +354,7 @@ def upload_transactions_csv(
     skipped = 0
     categorised = 0
     errors = []
+    transactions_to_score = []
 
     for i, row in df.iterrows():
         try:
@@ -422,12 +423,7 @@ def upload_transactions_csv(
             db.add(txn)
             db.flush()
 
-            anomaly_results = score_transactions([txn])
-            anomaly = anomaly_results[0] if anomaly_results else None
-
-            if anomaly:
-                txn.anomaly_score = anomaly.anomaly_score
-                txn.is_anomaly = anomaly.is_anomaly
+            transactions_to_score.append(txn)
 
             inserted += 1
 
@@ -436,6 +432,16 @@ def upload_transactions_csv(
 
         except Exception as e:
             errors.append({"row": int(i), "error": str(e)})
+
+    if transactions_to_score:
+        anomaly_results = score_transactions(transactions_to_score)
+        anomaly_map = {item.transaction_id: item for item in anomaly_results}
+
+        for txn in transactions_to_score:
+            anomaly = anomaly_map.get(txn.transaction_id)
+            if anomaly:
+                txn.anomaly_score = anomaly.anomaly_score
+                txn.is_anomaly = anomaly.is_anomaly
 
     db.commit()
     return schemas.UploadResponse(
