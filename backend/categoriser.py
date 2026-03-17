@@ -202,7 +202,9 @@ class TransactionCategoriser:
             if not labels:
                 return "Shopping & Retail"
 
-            return str(labels[0]).strip()
+            predicted = str(labels[0]).strip()
+            cleaned = self.normalise_category(predicted)
+            return cleaned or "Financial Services"
         except Exception:
             return "Shopping & Retail"
 

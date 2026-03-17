@@ -211,6 +211,13 @@ def show_dashboard():
         timeout=10,
     )
 
+    r = requests.get(
+        f"{API_BASE}/transactions",
+        headers=_auth_headers(),
+        params=params,
+        timeout=10,
+    )
+
     if not r.ok:
         st.error("Failed to load transactions")
         return
@@ -218,7 +225,7 @@ def show_dashboard():
     rows = r.json()
 
     if not rows:
-        st.info("No transactions found")
+        st.info("No transactions found. Upload a CSV to begin analysis.")
         return
 
     df = pd.DataFrame(rows)
@@ -237,6 +244,13 @@ def show_dashboard():
     df["is_anomaly_bool"] = df["is_anomaly"].fillna(False).astype(bool)
 
     st.subheader("Transactions")
+    st.caption(f"Total transactions: {len(df)}")
+
+    category_counts = df["category_clean"].value_counts()
+
+    st.caption("Top categories:")
+    for cat, count in category_counts.head(3).items():
+        st.write(f"{cat}: {count}")
 
     header_cols = st.columns([2, 4, 3, 3, 3, 3, 3, 1])
     header_cols[0].write("Date")
@@ -261,10 +275,12 @@ def show_dashboard():
         balance = row["display_balance"]
         txn_id = row["id"]
         is_anomaly = bool(row.get("is_anomaly", False))
-        anomaly_score = row.get("anomaly_score", None)
 
         money_in = f"€{amount:,.2f}" if amount > 0 else "€0.00"
         money_out = f"€{abs(amount):,.2f}" if amount < 0 else "€0.00"
+
+        if amount < 0 and abs(amount) > 1000:
+            money_out = f"🔥 {money_out}"
 
         cols[0].write(date)
         cols[1].write(details)
