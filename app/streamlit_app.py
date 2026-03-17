@@ -279,8 +279,13 @@ def show_dashboard():
         money_in = f"€{amount:,.2f}" if amount > 0 else "€0.00"
         money_out = f"€{abs(amount):,.2f}" if amount < 0 else "€0.00"
 
+        # large expense
         if amount < 0 and abs(amount) > 1000:
-            money_out = f"🔥 {money_out}"
+            money_out = f"😭 {money_out}"
+
+        # large income
+        if amount > 0 and amount > 1000:
+            money_in = f"💰 {money_in}"
 
         cols[0].write(date)
         cols[1].write(details)
