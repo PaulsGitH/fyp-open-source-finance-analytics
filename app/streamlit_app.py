@@ -19,15 +19,21 @@ API_BASE = f"http://{API_HOST}:{API_PORT}"
 
 CATEGORIES = [
     "Food & Dining",
+    "Groceries",
     "Transportation",
+    "Fuel",
     "Shopping & Retail",
     "Entertainment & Recreation",
+    "Subscriptions",
+    "Housing",
     "Healthcare & Medical",
     "Utilities & Services",
     "Financial Services",
     "Income",
     "Government & Legal",
     "Charity & Donations",
+    "Education",
+    "Travel",
 ]
 
 
@@ -65,6 +71,8 @@ def _cost_type_for_category(category: str) -> str:
         "utilities & services",
         "financial services",
         "government & legal",
+        "subscriptions",
+        "housing",
     }
 
     category_clean = str(category or "").strip().lower()
@@ -246,6 +254,9 @@ def show_dashboard():
         date = row["date"]
         details = row["merchant"] or row["description"]
         category = row["category"] or "Financial Services"
+        display_category = category
+        if account_type == "Business" and category == "Housing":
+            display_category = "Rent"
         amount = float(row["amount"])
         balance = row["display_balance"]
         txn_id = row["id"]
@@ -258,12 +269,28 @@ def show_dashboard():
         cols[0].write(date)
         cols[1].write(details)
 
-        new_category = cols[2].selectbox(
+        category_options = CATEGORIES.copy()
+        if account_type == "Business":
+            category_options = [
+                "Rent" if option == "Housing" else option for option in category_options
+            ]
+
+        selected_display_index = (
+            category_options.index(display_category)
+            if display_category in category_options
+            else 0
+        )
+
+        new_display_category = cols[2].selectbox(
             "Category",
-            CATEGORIES,
-            index=CATEGORIES.index(category) if category in CATEGORIES else 0,
+            category_options,
+            index=selected_display_index,
             key=f"cat_{txn_id}",
             label_visibility="collapsed",
+        )
+
+        new_category = (
+            "Housing" if new_display_category == "Rent" else new_display_category
         )
 
         if new_category != category:
