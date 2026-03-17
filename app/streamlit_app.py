@@ -447,12 +447,18 @@ def show_dashboard():
     if not category_spend.empty:
         st.caption("Expense by Category")
 
-        fig, ax = plt.subplots(figsize=(10, 5))
+        fig_height = max(6, len(category_spend) * 0.5)
+        fig, ax = plt.subplots(figsize=(10, fig_height))
         colors = plt.cm.tab20.colors[: len(category_spend)]
 
-        ax.bar(category_spend.index, category_spend.values, color=colors)
-        ax.set_ylabel("Amount (€)")
-        ax.tick_params(axis="x", rotation=45)
+        ax.barh(category_spend.index, category_spend.values, color=colors)
+        ax.set_xlabel("Amount (€)")
+        ax.set_ylabel("")
+        ax.tick_params(axis="x", labelsize=9)
+        ax.tick_params(axis="y", labelsize=10)
+
+        ax.invert_yaxis()
+        plt.tight_layout()
 
         _style_dark_chart(ax)
         st.pyplot(fig)
