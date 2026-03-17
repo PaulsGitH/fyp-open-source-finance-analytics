@@ -17,97 +17,18 @@ API_PORT = int(os.getenv("API_PORT", "8000"))
 API_BASE = f"http://{API_HOST}:{API_PORT}"
 
 
-CATEGORIES = sorted(
-    [
-        "income",
-        "salary",
-        "bonus",
-        "refund",
-        "interest",
-        "dividend",
-        "investment return",
-        "sales revenue",
-        "client payments",
-        "contract income",
-        "grant income",
-        "loan received",
-        "capital injection",
-        "housing",
-        "rent",
-        "mortgage",
-        "groceries",
-        "dining",
-        "coffee",
-        "transport",
-        "fuel",
-        "parking",
-        "utilities",
-        "electricity",
-        "gas",
-        "water",
-        "internet",
-        "phone",
-        "education",
-        "entertainment",
-        "streaming",
-        "gaming",
-        "health",
-        "medical",
-        "fitness",
-        "shopping",
-        "clothing",
-        "travel",
-        "insurance",
-        "subscriptions",
-        "charity",
-        "family",
-        "gifts",
-        "savings",
-        "cash withdrawal",
-        "payroll",
-        "contractor payments",
-        "employee benefits",
-        "tax payments",
-        "vat",
-        "corporation tax",
-        "legal fees",
-        "consulting fees",
-        "bank fees",
-        "payment processor fees",
-        "software subscriptions",
-        "saas tools",
-        "cloud infrastructure",
-        "hosting",
-        "domains",
-        "office supplies",
-        "coworking",
-        "equipment",
-        "hardware",
-        "software",
-        "inventory",
-        "supplier payments",
-        "raw materials",
-        "manufacturing costs",
-        "shipping",
-        "logistics",
-        "delivery",
-        "marketing",
-        "advertising",
-        "customer acquisition",
-        "sales commission",
-        "research and development",
-        "training",
-        "maintenance",
-        "repairs",
-        "licensing",
-        "compliance",
-        "professional services",
-        "merchant services",
-        "chargeback",
-        "other",
-        "system",
-    ]
-)
+CATEGORIES = [
+    "Food & Dining",
+    "Transportation",
+    "Shopping & Retail",
+    "Entertainment & Recreation",
+    "Healthcare & Medical",
+    "Utilities & Services",
+    "Financial Services",
+    "Income",
+    "Government & Legal",
+    "Charity & Donations",
+]
 
 
 def _auth_headers():
@@ -141,43 +62,9 @@ def _build_display_balance(df: pd.DataFrame) -> pd.Series:
 
 def _cost_type_for_category(category: str) -> str:
     fixed_categories = {
-        "housing",
-        "rent",
-        "mortgage",
-        "utilities",
-        "electricity",
-        "gas",
-        "water",
-        "internet",
-        "phone",
-        "insurance",
-        "insurance business",
-        "subscriptions",
-        "software subscriptions",
-        "saas tools",
-        "cloud infrastructure",
-        "hosting",
-        "domains",
-        "office rent",
-        "coworking",
-        "payroll",
-        "employee benefits",
-        "tax payments",
-        "vat",
-        "corporation tax",
-        "accounting fees",
-        "legal fees",
-        "bank fees",
-        "payment processor fees",
-        "licensing",
-        "compliance",
-        "maintenance",
-        "professional services",
-        "merchant services",
-        "office supplies",
-        "software",
-        "training",
-        "research and development",
+        "utilities & services",
+        "financial services",
+        "government & legal",
     }
 
     category_clean = str(category or "").strip().lower()
@@ -336,7 +223,9 @@ def show_dashboard():
 
     df["display_balance"] = _build_display_balance(df)
     df["amount_num"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
-    df["category_clean"] = df["category"].fillna("other").replace("", "other")
+    df["category_clean"] = (
+        df["category"].fillna("Financial Services").replace("", "Financial Services")
+    )
     df["is_anomaly_bool"] = df["is_anomaly"].fillna(False).astype(bool)
 
     st.subheader("Transactions")
@@ -356,7 +245,7 @@ def show_dashboard():
 
         date = row["date"]
         details = row["merchant"] or row["description"]
-        category = row["category"] or "other"
+        category = row["category"] or "Financial Services"
         amount = float(row["amount"])
         balance = row["display_balance"]
         txn_id = row["id"]

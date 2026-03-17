@@ -47,19 +47,11 @@ def normalise_category_for_account(
     amount: float,
     current_user: models.User,
 ) -> str:
-    cleaned = (category or "other").strip().lower()
-    user_email = (current_user.email or "").strip().lower()
-
     if amount > 0:
-        if user_email == "business@example.com":
-            return "sales revenue"
+        return "Income"
 
-        if cleaned == "salary":
-            return "salary"
-
-        return "other"
-
-    return cleaned
+    cleaned = categoriser.normalise_category(category)
+    return cleaned or "Financial Services"
 
 
 @app.get("/health")
@@ -396,6 +388,7 @@ def upload_transactions_csv(
                 raw_category = categoriser.categorise(
                     description=row.get("description"),
                     merchant=row.get("merchant"),
+                    amount=float(amount),
                 )
                 categorised += 1
 
@@ -471,10 +464,10 @@ def update_transaction_category(
     if txn is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    new_category = payload.category.strip().lower()
+    new_category = categoriser.normalise_category(payload.category)
 
     if not new_category:
-        raise HTTPException(status_code=400, detail="Category cannot be empty")
+        raise HTTPException(status_code=400, detail="Invalid category")
 
     txn.category = new_category
 
