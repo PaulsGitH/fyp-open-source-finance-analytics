@@ -382,6 +382,8 @@ def upload_transactions_csv(
                     skipped += 1
                     continue
 
+            description = row.get("description") or ""
+            merchant = row.get("merchant") or ""
             raw_category = categoriser.normalise_category(row.get("category"))
 
             if raw_category is None:
@@ -392,10 +394,10 @@ def upload_transactions_csv(
                 )
                 categorised += 1
 
-            raw_category = normalise_category_for_account(
-                raw_category,
-                float(amount),
-                current_user,
+            raw_category = categoriser.categorise(
+                description=description,
+                merchant=merchant,
+                amount=float(amount),
             )
 
             txn = models.Transaction(
