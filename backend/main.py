@@ -309,12 +309,26 @@ def upload_transactions_csv(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid CSV file")
 
-    required = {"date", "description", "amount"}
-    missing = required - set(df.columns)
-    if missing:
+    df.columns = [
+        str(col).strip().lower().replace(" ", "_").replace("-", "_")
+        for col in df.columns
+    ]
+
+    base_required = {"date", "description"}
+    missing_base = base_required - set(df.columns)
+    if missing_base:
         raise HTTPException(
             status_code=400,
-            detail=f"Missing required columns: {sorted(list(missing))}",
+            detail=f"Missing required columns: {sorted(list(missing_base))}",
+        )
+
+    has_amount = "amount" in df.columns
+    has_split_amounts = "money_in" in df.columns and "money_out" in df.columns
+
+    if not has_amount and not has_split_amounts:
+        raise HTTPException(
+            status_code=400,
+            detail="CSV must contain either 'amount' or both 'money_in' and 'money_out' columns",
         )
 
     user_id = current_user.id
@@ -352,8 +366,23 @@ def upload_transactions_csv(
                 raise ValueError("Invalid date")
 
             amount = row.get("amount")
-            if amount is None or (isinstance(amount, float) and pd.isna(amount)):
+
+            if amount is None or pd.isna(amount):
+                money_in = row.get("money_in", 0)
+                money_out = row.get("money_out", 0)
+
+                money_in = 0 if pd.isna(money_in) else money_in
+                money_out = 0 if pd.isna(money_out) else money_out
+
+                try:
+                    amount = float(money_in) - float(money_out)
+                except Exception:
+                    raise ValueError("Invalid amount")
+
+            if amount is None or pd.isna(amount):
                 raise ValueError("Invalid amount")
+
+            amount = float(amount)
 
             txn_id = row.get("transaction_id")
             txn_id = (
@@ -391,7 +420,7 @@ def upload_transactions_csv(
                 raw_category = categoriser.categorise(
                     description=description,
                     merchant=merchant,
-                    amount=float(amount),
+                    amount=amount,
                 )
                 categorised += 1
 
