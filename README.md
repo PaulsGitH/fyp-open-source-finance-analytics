@@ -186,7 +186,12 @@ Minimum required fields:
 
 1. date  
 2. description  
-3. amount  
+
+One of the following must also be present:
+
+- amount  
+OR  
+- money_in and money_out  
 
 Optional fields:
 
@@ -195,12 +200,16 @@ Optional fields:
 3. currency  
 4. transaction_id  
 
+The system supports both standardised CSV files with a single amount column and bank export formats where incoming and outgoing values are stored separately.  
+
+During upload, the system automatically normalises these formats into a single internal amount value before categorisation, anomaly scoring, and storage.
+
 ## Data Processing Pipeline
 
 The upload pipeline performs:
 
 1. date parsing  
-2. amount validation  
+2. transaction value normalisation (amount OR money_in and money_out)  
 3. duplicate detection  
 4. categorisation  
 5. anomaly scoring  
