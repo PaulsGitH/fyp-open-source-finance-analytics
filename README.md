@@ -17,6 +17,20 @@ The system consists of:
 3. PostgreSQL database  
 4. Hybrid transaction categorisation pipeline using rule based logic and a zero shot AI model  
 
+## Screenshots
+
+### Dashboard Overview
+![Dashboard](screenshots/dashboard.png)
+
+### Analytics and Charts
+![Charts](screenshots/charts.png)
+
+### CSV Upload Interface
+![Upload](screenshots/upload.png)
+
+### Login Screen
+![Login](screenshots/login.png)
+
 ## Core Features
 
 1. CSV upload and transaction parsing  
