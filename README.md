@@ -19,16 +19,16 @@ The system consists of:
 
 ## Screenshots
 
-### Dashboard Overview
+## Dashboard Overview
 ![Dashboard](screenshots/dashboard.png)
 
-### Analytics and Charts
+## Analytics and Charts
 ![Charts](screenshots/charts.png)
 
-### CSV Upload Interface
+## CSV Upload Interface
 ![Upload](screenshots/upload.png)
 
-### Login Screen
+## Login Screen
 ![Login](screenshots/login.png)
 
 ## Core Features
