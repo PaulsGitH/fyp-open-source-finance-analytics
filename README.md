@@ -73,7 +73,7 @@ matplotlib
 
 Before running the project, ensure the following are installed:
 
-1. Python 3.11 or newer  
+1. Python 3.11 (Many requirements do not support 3.12+) 
 2. PostgreSQL  
 3. Git  
 4. Terminal such as Windows Terminal or PowerShell  
