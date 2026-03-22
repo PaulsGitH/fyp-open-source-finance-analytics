@@ -562,10 +562,21 @@ def show_dashboard():
         with breakdown_col1:
             st.caption("Fixed cost breakdown")
             if not fixed_breakdown.empty:
+                fixed_breakdown = fixed_breakdown.copy()
                 fixed_breakdown.columns = ["Category", "Amount"]
+
+                if str(account_type).strip().lower() == "business":
+                    fixed_breakdown["Category"] = (
+                        fixed_breakdown["Category"]
+                        .astype(str)
+                        .str.strip()
+                        .replace({"Housing": "Rent"})
+                    )
+
                 fixed_breakdown["Amount"] = fixed_breakdown["Amount"].apply(
                     lambda x: f"€{x:,.2f}"
                 )
+
                 st.dataframe(
                     fixed_breakdown,
                     use_container_width=True,
