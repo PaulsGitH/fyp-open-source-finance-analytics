@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-CATEGORY_LABELS = [
+CATEGORY_LABELS = [  # Fixed category set to keep outputs consistent across the system
     "Food & Dining",
     "Groceries",
     "Transportation",
@@ -21,99 +21,103 @@ CATEGORY_LABELS = [
     "Housing",
 ]
 
-EXPENSE_CATEGORY_LABELS = [label for label in CATEGORY_LABELS if label != "Income"]
+EXPENSE_CATEGORY_LABELS = [
+    label for label in CATEGORY_LABELS if label != "Income"
+]  # Exclude Income so expense classification only targets spending categories
 
-HIGH_CONFIDENCE_CATEGORY_RULES = {
-    "Subscriptions": [
-        "netflix",
-        "spotify",
-        "disney+",
-        "disney plus",
-        "prime video",
-        "apple music",
-        "youtube premium",
-        "paramount+",
-        "paramount plus",
-        "tidal",
-        "deezer",
-        "chatgpt",
-        "openai subscription",
-        "adobe subscription",
-        "microsoft 365",
-        "office 365",
-        "icloud",
-        "google one",
-        "patreon",
-        "google workspace",
-        "workspace subscription",
-        "gsuite",
-        "jira software subscription",
-        "atlassian jira",
-    ],
-    "Utilities & Services": [
-        "electric ireland",
-        "bord gais",
-        "sse airtricity",
-        "eir",
-        "vodafone",
-        "three",
-        "virgin media",
-        "sky",
-        "broadband",
-        "internet",
-        "wifi",
-        "mobile bill",
-        "phone bill",
-        "electricity",
-        "gas bill",
-        "water bill",
-        "utility bill",
-        "prepay power",
-        "pinergy",
-        "aws cloud hosting",
-        "cloud hosting services",
-        "hosting services",
-    ],
-    "Housing": [
-        "rent",
-        "mortgage",
-        "landlord",
-        "property management",
-        "letting",
-        "lease payment",
-        "office rent",
-        "commercial rent",
-        "apartment",
-        "tenancy",
-        "rental",
-    ],
-    "Shopping & Retail": [
-        "viking direct",
-        "office supplies",
-        "office equipment",
-        "office furniture",
-        "amazon business",
-        "ikea ireland",
-        "meta ads",
-        "facebook ads",
-        "instagram ads",
-        "ads campaign",
-        "marketing spend",
-    ],
-    "Financial Services": [
-        "stripe payment processing fee",
-        "payment processing fee",
-        "contractor payment",
-        "frontend developer",
-        "backend developer",
-        "software developer",
-        "full stack developer",
-        "ux designer",
-        "developer payment",
-        "consultant",
-        "freelancer",
-    ],
-}
+HIGH_CONFIDENCE_CATEGORY_RULES = (
+    {  # Handle common transaction patterns with rules before using ML
+        "Subscriptions": [
+            "netflix",
+            "spotify",
+            "disney+",
+            "disney plus",
+            "prime video",
+            "apple music",
+            "youtube premium",
+            "paramount+",
+            "paramount plus",
+            "tidal",
+            "deezer",
+            "chatgpt",
+            "openai subscription",
+            "adobe subscription",
+            "microsoft 365",
+            "office 365",
+            "icloud",
+            "google one",
+            "patreon",
+            "google workspace",
+            "workspace subscription",
+            "gsuite",
+            "jira software subscription",
+            "atlassian jira",
+        ],
+        "Utilities & Services": [
+            "electric ireland",
+            "bord gais",
+            "sse airtricity",
+            "eir",
+            "vodafone",
+            "three",
+            "virgin media",
+            "sky",
+            "broadband",
+            "internet",
+            "wifi",
+            "mobile bill",
+            "phone bill",
+            "electricity",
+            "gas bill",
+            "water bill",
+            "utility bill",
+            "prepay power",
+            "pinergy",
+            "aws cloud hosting",
+            "cloud hosting services",
+            "hosting services",
+        ],
+        "Housing": [
+            "rent",
+            "mortgage",
+            "landlord",
+            "property management",
+            "letting",
+            "lease payment",
+            "office rent",
+            "commercial rent",
+            "apartment",
+            "tenancy",
+            "rental",
+        ],
+        "Shopping & Retail": [
+            "viking direct",
+            "office supplies",
+            "office equipment",
+            "office furniture",
+            "amazon business",
+            "ikea ireland",
+            "meta ads",
+            "facebook ads",
+            "instagram ads",
+            "ads campaign",
+            "marketing spend",
+        ],
+        "Financial Services": [
+            "stripe payment processing fee",
+            "payment processing fee",
+            "contractor payment",
+            "frontend developer",
+            "backend developer",
+            "software developer",
+            "full stack developer",
+            "ux designer",
+            "developer payment",
+            "consultant",
+            "freelancer",
+        ],
+    }
+)
 
 
 class TransactionCategoriser:
@@ -136,14 +140,18 @@ class TransactionCategoriser:
         amount: Optional[float] = None,
     ) -> Optional[str]:
         try:
-            if amount is not None and float(amount) > 0:
+            if (
+                amount is not None and float(amount) > 0
+            ):  # Treat positive amounts as Income to avoid incorrect expense classification
                 return "Income"
         except Exception:
             pass
 
-        text = self._build_text(description=description, merchant=merchant).lower()
+        text = self._build_text(
+            description=description, merchant=merchant
+        ).lower()  # Combine merchant and description to improve matching context
 
-        if any(
+        if any(  # Prioritise housing keywords to avoid misclassification of rent-related transactions
             keyword in text
             for keyword in [
                 "rent",
@@ -175,7 +183,7 @@ class TransactionCategoriser:
         merchant: Optional[str] = None,
         amount: Optional[float] = None,
     ) -> str:
-        high_confidence_match = self._match_high_confidence_category(
+        high_confidence_match = self._match_high_confidence_category(  # Apply rule-based categorisation before fallback to ML
             description=description,
             merchant=merchant,
             amount=amount,
@@ -188,12 +196,14 @@ class TransactionCategoriser:
         if not text:
             return "Financial Services"
 
-        classifier = self._get_classifier()
+        classifier = (
+            self._get_classifier()
+        )  # Use zero-shot model only for transactions not handled by rules
         if classifier is None:
             return "Shopping & Retail"
 
         try:
-            result = classifier(
+            result = classifier(  # Rank text against predefined categories to keep predictions controlled
                 text,
                 EXPENSE_CATEGORY_LABELS,
                 hypothesis_template="This bank transaction belongs to the category {}.",
@@ -232,7 +242,9 @@ class TransactionCategoriser:
         return str(value).strip()
 
     def _get_classifier(self):
-        if self._classifier_attempted:
+        if (
+            self._classifier_attempted
+        ):  # Load and cache model once to avoid repeated initialisation
             return self._classifier
 
         self._classifier_attempted = True

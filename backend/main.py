@@ -28,7 +28,7 @@ def get_db():
         db.close()
 
 
-def get_current_user(
+def get_current_user(  # Use header-based user resolution to keep authentication simple for this project
     db: Session = Depends(get_db),
     x_user_email: Optional[str] = Header(default=None),
 ) -> models.User:
@@ -42,7 +42,7 @@ def get_current_user(
     return user
 
 
-def normalise_category_for_account(
+def normalise_category_for_account(  # Normalise stored categories so account views remain consistent with allowed labels
     category: Optional[str],
     amount: float,
     current_user: models.User,
@@ -293,7 +293,9 @@ def list_transaction_anomalies(
     return result
 
 
-@app.post("/transactions/upload", response_model=schemas.UploadResponse)
+@app.post(
+    "/transactions/upload", response_model=schemas.UploadResponse
+)  # Core ingestion route for parsing, categorising, scoring, and storing uploaded CSV data
 def upload_transactions_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -309,7 +311,7 @@ def upload_transactions_csv(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid CSV file")
 
-    df.columns = [
+    df.columns = [  # Normalise incoming headers so bank exports with spaces or mixed casing can be handled consistently
         str(col).strip().lower().replace(" ", "_").replace("-", "_")
         for col in df.columns
     ]
@@ -322,7 +324,9 @@ def upload_transactions_csv(
             detail=f"Missing required columns: {sorted(list(missing_base))}",
         )
 
-    has_amount = "amount" in df.columns
+    has_amount = (
+        "amount" in df.columns
+    )  # Support both standard amount-based CSV files and bank exports with split money in/out columns
     has_split_amounts = "money_in" in df.columns and "money_out" in df.columns
 
     if not has_amount and not has_split_amounts:
@@ -379,7 +383,9 @@ def upload_transactions_csv(
                 except Exception:
                     raise ValueError("Invalid amount")
 
-            if amount is None or pd.isna(amount):
+            if amount is None or pd.isna(
+                amount
+            ):  # Convert split bank values into one internal amount so later processing uses a single format
                 raise ValueError("Invalid amount")
 
             amount = float(amount)
@@ -395,7 +401,9 @@ def upload_transactions_csv(
                 skipped += 1
                 continue
 
-            if not txn_id:
+            if (
+                not txn_id
+            ):  # Fallback deduplication for CSV files that do not provide a unique transaction identifier
                 exists = (
                     db.query(models.Transaction.id)
                     .filter(
@@ -414,9 +422,13 @@ def upload_transactions_csv(
             description = row.get("description") or ""
             merchant = row.get("merchant") or ""
 
-            raw_category = categoriser.normalise_category(row.get("category"))
+            raw_category = categoriser.normalise_category(
+                row.get("category")
+            )  # Preserve a valid existing category if one is already supplied in the uploaded data
 
-            if raw_category is None:
+            if (
+                raw_category is None
+            ):  # Apply hybrid categorisation only when the input row does not already contain a valid category
                 raw_category = categoriser.categorise(
                     description=description,
                     merchant=merchant,
@@ -449,7 +461,9 @@ def upload_transactions_csv(
         except Exception as e:
             errors.append({"row": int(i), "error": str(e)})
 
-    if transactions_to_score:
+    if (
+        transactions_to_score
+    ):  # Score anomalies once per uploaded batch and store the results for stable later retrieval
         anomaly_results = score_transactions(transactions_to_score)
         anomaly_map = {item.transaction_id: item for item in anomaly_results}
 

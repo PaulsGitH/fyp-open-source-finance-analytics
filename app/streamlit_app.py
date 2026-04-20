@@ -56,7 +56,9 @@ def _safe_balance_text(value):
         return ""
 
 
-def _build_display_balance(df: pd.DataFrame) -> pd.Series:
+def _build_display_balance(
+    df: pd.DataFrame,
+) -> pd.Series:  # Reconstruct balance when not provided in uploaded data
     if "balance" in df.columns:
         numeric_balance = pd.to_numeric(df["balance"], errors="coerce")
         if numeric_balance.notna().any():
@@ -66,7 +68,9 @@ def _build_display_balance(df: pd.DataFrame) -> pd.Series:
     return running
 
 
-def _cost_type_for_category(category: str) -> str:
+def _cost_type_for_category(
+    category: str,
+) -> str:  # Classify categories as fixed or variable for analytics
     fixed_categories = {
         "utilities & services",
         "financial services",
@@ -89,7 +93,9 @@ def update_category(transaction_id, new_category):
     return r.ok
 
 
-def upload_csv_to_backend(uploaded_file):
+def upload_csv_to_backend(
+    uploaded_file,
+):  # Send CSV to backend for validation and processing
     try:
         file_bytes = uploaded_file.getvalue()
 
@@ -126,7 +132,7 @@ def upload_csv_to_backend(uploaded_file):
         return False, f"Upload failed. Details: {e}"
 
 
-def _style_dark_chart(ax):
+def _style_dark_chart(ax):  # Apply consistent dark theme styling to charts
     ax.set_facecolor("#0f1117")
     ax.figure.set_facecolor("#0f1117")
     ax.tick_params(colors="white")
@@ -142,7 +148,9 @@ def show_dashboard():
 
     with header_col1:
         st.title("Open Source Finance Analytics")
-        account_type = st.session_state.get("account_type", "Personal")
+        account_type = st.session_state.get(
+            "account_type", "Personal"
+        )  # Use account type to adjust dashboard behaviour and labels
         st.caption(f"Active account: {account_type}")
 
     with header_col2:
@@ -196,7 +204,10 @@ def show_dashboard():
     kind = col3.selectbox("Type", ["all", "income", "expense"])
     category_filter = col4.selectbox("Category", ["all"] + CATEGORIES)
 
-    params = {"kind": kind, "category": category_filter}
+    params = {
+        "kind": kind,
+        "category": category_filter,
+    }  # Pass filters to backend for server-side query handling
 
     if start_date:
         params["start_date"] = start_date.isoformat()
@@ -236,7 +247,9 @@ def show_dashboard():
             drop=True
         )
 
-    df["display_balance"] = _build_display_balance(df)
+    df["display_balance"] = _build_display_balance(
+        df
+    )  # Prepare backend data for consistent frontend display
     df["amount_num"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
     df["category_clean"] = (
         df["category"].fillna("Financial Services").replace("", "Financial Services")
@@ -269,7 +282,9 @@ def show_dashboard():
         details = row["merchant"] or row["description"]
         category = row["category"] or "Financial Services"
         display_category = category
-        if account_type == "Business" and category == "Housing":
+        if (
+            account_type == "Business" and category == "Housing"
+        ):  # Show Housing as Rent for business users without changing stored value
             display_category = "Rent"
         amount = float(row["amount"])
         balance = row["display_balance"]
